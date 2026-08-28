@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Savant host",
+        "description": "Enter the IP address (or hostname) of your Savant host. The control port is discovered automatically unless you provide one.",
+        "data": {
+          "host": "Host address",
+          "port": "Port (optional)"
+        }
+      },
+      "advanced": {
+        "title": "Advanced options",
+        "description": "Host {host}, port {port}. Credentials and room names are optional; leave blank if unsure.",
+        "data": {
+          "username": "Local username",
+          "password": "Local password",
+          "cloud_token": "Cloud token",
+          "configuration_id": "Configuration ID",
+          "host_token": "Host token",
+          "rooms": "Room names (comma or newline separated)"
+        }
+      }
+    },
+    "error": {
+      "discovery_failed": "Could not discover the host's control port. Provide an explicit port."
+    },
+    "abort": {
+      "already_configured": "This host is already configured."
+    }
+  }
+}

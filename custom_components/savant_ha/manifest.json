@@ -1,0 +1,14 @@
+{
+  "domain": "savant_ha",
+  "name": "Savant",
+  "codeowners": ["@wdillon"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://git.housedillon.com/wdillon/savant-ha2",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://git.housedillon.com/wdillon/savant-ha2/issues",
+  "requirements": ["msgpack>=1.0.0"],
+  "version": "0.1.0",
+  "homeassistant": "2024.1.0"
+}

@@ -1,0 +1,22 @@
+# temp / scratch (do NOT use /var per project convention)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# local HA config mounts
+config/
+
+# captured wire/credential material must never be committed
+captures/
+*.pcap
+*.log
