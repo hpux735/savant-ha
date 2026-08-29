@@ -17,7 +17,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_ROOMS,
     DOMAIN,
     GLOBAL_CURRENT_TEMPERATURE,
     HVAC_STATE_PREFIX,
@@ -59,12 +58,9 @@ class SavantSensor(SavantEntity, SensorEntity):
 
 
 def _discovered_rooms(hub: SavantHub) -> set[str]:
-    rooms: set[str] = set(hub.entry.data.get(CONF_ROOMS) or [])
-    suffix = f".{ROOM_CURRENT_TEMPERATURE}"
-    for key in hub.states:
-        if key.endswith(suffix):
-            rooms.add(key[: -len(suffix)])
-    return rooms
+    # hub.rooms = user-supplied rooms + rooms derived from scenes / startZone / state
+    # keys (PROTOCOL.md §6.1).
+    return set(hub.rooms)
 
 
 def _build_entities(hub: SavantHub) -> list[SavantSensor]:

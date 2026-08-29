@@ -17,10 +17,10 @@ Transport summary (PROTOCOL.md §1):
 from __future__ import annotations
 
 import asyncio
-import base64
 import gzip
 import socket
 import ssl
+import time
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
@@ -32,6 +32,7 @@ import msgpack
 from aiohttp import WSMsgType
 
 from .const import (
+    DASHBOARD_REQUEST_SCENES,
     DEVICE_APP,
     DEVICE_MAKE,
     DEVICE_TYPE,
@@ -48,6 +49,10 @@ from .const import (
     LOGGER,
     RPM_SUBPROTOCOL,
     URI_AUTH_REQUEST,
+    URI_AUTH_RESPONSE,
+    URI_DASHBOARD_REGISTER,
+    URI_DASHBOARD_REQUEST,
+    URI_DASHBOARD_UPDATE,
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
@@ -55,6 +60,10 @@ from .const import (
 
 _StateCallback = Callable[[str, Any], None]
 _StatusCallback = Callable[[bool], None]
+_RoomsCallback = Callable[[set[str]], None]
+
+# How long to wait for the host to authorize us before registering state anyway.
+AUTH_TIMEOUT = 5.0
 
 
 class SavantError(Exception):
@@ -208,14 +217,11 @@ class SavantClient:
         self._host_token = host_token
         self._username = username
         self._password = password
-        # ASSUMPTION (PROTOCOL.md §7.1): if no explicit hostToken is supplied but a
-        # local username/password is, fall back to base64(username:password).  The true
-        # hostToken derivation has not been observed.
-        if self._host_token is None and username and password:
-            self._host_token = base64.b64encode(
-                f"{username}:{password}".encode()
-            ).decode()
+        # Credentials for the LOCAL LOGIN path (PROTOCOL.md §4.1/§4.9): the host issues
+        # the hostToken in exchange for {user, password}, so no cloud tokens are needed.
+        self._has_credentials = bool(self._host_token or (username and password))
         self._subscribe_keys = list(subscribe_keys or [])
+        self._subscribed_keys: set[str] = set(self._subscribe_keys)
         self._reconnect_delay = reconnect_delay
         self._reconnect_max_delay = reconnect_max_delay
 
@@ -224,9 +230,12 @@ class SavantClient:
         self._connected = False
         self._stopping = False
         self._authorized = False
+        self._post_auth_done = False
+        self._auth_task: asyncio.Task | None = None
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
+        self.on_rooms_discovered: _RoomsCallback | None = None
 
     # ------------------------------------------------------------------ public
 
@@ -320,15 +329,23 @@ class SavantClient:
         )
         self._connected = True
         self._authorized = False
+        self._post_auth_done = False
         if self.on_status is not None:
             self.on_status(True)
-        # Session handshake (PROTOCOL.md §3).
+        # Session handshake (PROTOCOL.md §3).  State registration follows the auth
+        # response on the credentialed path (§3 flow), so it is deferred to
+        # ``_post_auth``.
         await self._send_device_present()
         await self._send_auth_request()
-        await self._send_state_register()
+        if self._has_credentials:
+            self._auth_task = asyncio.ensure_future(self._wait_and_post_auth())
+        else:
+            await self._post_auth()
 
     async def _send_device_present(self) -> None:
-        message = {
+        # A local-only session omits cloudToken/configurationID (PROTOCOL.md §4.9) —
+        # include them only when the user actually supplied them.
+        message: dict[str, Any] = {
             "protocolVersion": "4",
             "homeId": self._home_id,
             "device": {
@@ -341,29 +358,85 @@ class SavantClient:
                 "name": DEVICE_TYPE,
             },
             "messageFormat": 2,
-            "cloudToken": self._cloud_token,
-            "configurationID": self._configuration_id,
         }
+        if self._cloud_token:
+            message["cloudToken"] = self._cloud_token
+        if self._configuration_id:
+            message["configurationID"] = self._configuration_id
         await self.request(URI_DEVICE_PRESENT, [message])
 
     async def _send_auth_request(self) -> None:
-        # Only present a hostToken if we have one (PROTOCOL.md §3/§7.1).
+        # One of two observed forms (PROTOCOL.md §4): a cached/cloud hostToken, or the
+        # local-login form {user, password}.
         if self._host_token:
             await self.request(URI_AUTH_REQUEST, [{"hostToken": self._host_token}])
+        elif self._username and self._password:
+            await self.request(
+                URI_AUTH_REQUEST,
+                [{"user": self._username, "password": self._password}],
+            )
+
+    async def _wait_and_post_auth(self) -> None:
+        try:
+            deadline = time.monotonic() + AUTH_TIMEOUT
+            while not self._authorized and time.monotonic() < deadline:
+                await asyncio.sleep(0.2)
+            await self._post_auth()
+        except (SavantError, aiohttp.ClientError, OSError, TimeoutError):
+            pass
+
+    async def _post_auth(self) -> None:
+        if self._post_auth_done:
+            return
+        self._post_auth_done = True
+        await self._send_state_register()
+        await self._send_dashboard_register()
+        await self._send_scenes_request()
 
     async def _send_state_register(self) -> None:
-        # Subscribe by explicit dotted key (PROTOCOL.md §3/§5).  The key list is
-        # supplied by the hub; unknown room names cannot be enumerated ahead of time.
-        if self._subscribe_keys:
+        # Subscribe by explicit dotted key (PROTOCOL.md §3/§5).  Rooms are discovered
+        # at runtime and subscribed to via :meth:`register_state_keys`.
+        if self._subscribed_keys:
             await self.request(
                 URI_STATE_REGISTER,
-                [{"state": key} for key in self._subscribe_keys],
+                [{"state": key} for key in sorted(self._subscribed_keys)],
             )
+
+    async def register_state_keys(self, keys: list[str] | set[str]) -> None:
+        """Subscribe to additional state keys (e.g. newly discovered rooms)."""
+        new = [k for k in keys if k not in self._subscribed_keys]
+        if not new or not self.connected:
+            return
+        self._subscribed_keys.update(new)
+        try:
+            await self.request(
+                URI_STATE_REGISTER, [{"state": key} for key in sorted(new)]
+            )
+        except (SavantError, aiohttp.ClientError, OSError):
+            # Reconnect will re-register from ``_subscribed_keys``.
+            LOGGER.debug("Failed to register additional state keys (reconnecting?)")
+
+    async def _send_dashboard_register(self) -> None:
+        # Subscribe to dashboard pushes — the scene list embeds every room name
+        # (PROTOCOL.md §6.1).
+        # ASSUMPTION: the dis/<service>/register payload is an empty message map; the
+        # exact register-payload shape has not been captured, but the active
+        # GetAVAutomationScenes request below is observed and is the primary source.
+        await self.request(URI_DASHBOARD_REGISTER, [{}])
+
+    async def _send_scenes_request(self) -> None:
+        # Actively fetch the scene list; the response also embeds room names.
+        await self.request(URI_DASHBOARD_REQUEST, [{"request": DASHBOARD_REQUEST_SCENES}])
 
     async def _disconnect(self) -> None:
         was_connected = self._connected
         self._connected = False
         self._authorized = False
+        if self._auth_task is not None:
+            self._auth_task.cancel()
+            with suppress(Exception):
+                await self._auth_task
+            self._auth_task = None
         ws, self._ws = self._ws, None
         session, self._session = self._session, None
         if ws is not None and not ws.closed:
@@ -421,7 +494,52 @@ class SavantClient:
                     state = message.get("state")
                     if isinstance(state, str) and self.on_state_update is not None:
                         self.on_state_update(state, message.get("value"))
-        elif uri == "session/authenticationResponse":
-            first = messages[0] if messages and isinstance(messages[0], dict) else {}
-            self._authorized = bool(first.get("authorized", False))
-            LOGGER.debug("Savant authentication %s", "ok" if self._authorized else "denied")
+        elif uri == URI_AUTH_RESPONSE:
+            self._handle_auth_response(messages)
+        elif uri in (URI_DASHBOARD_UPDATE, URI_DASHBOARD_REQUEST):
+            self._emit_rooms(rooms_from_scene_messages(messages))
+        else:
+            LOGGER.debug("Unhandled Savant URI %r", uri)
+
+    def _handle_auth_response(self, messages: list[Any]) -> None:
+        first = messages[0] if messages and isinstance(messages[0], dict) else {}
+        self._authorized = bool(first.get("authorized", False))
+        LOGGER.debug("Savant authentication %s", "ok" if self._authorized else "denied")
+        # startZone names the room the session opens in (PROTOCOL.md §4.1/§6.1).
+        start_zone = first.get("startZone")
+        if isinstance(start_zone, str) and start_zone:
+            self._emit_rooms({start_zone})
+
+    def _emit_rooms(self, rooms: set[str]) -> None:
+        rooms = {r for r in rooms if isinstance(r, str) and r}
+        if rooms and self.on_rooms_discovered is not None:
+            self.on_rooms_discovered(rooms)
+
+
+def rooms_from_scene_messages(messages: list[Any]) -> set[str]:
+    """Extract room names from scene-list messages (PROTOCOL.md §6.1/§9).
+
+    Scene objects embed room names in ``definition.power.rooms`` (a map keyed by every
+    room — the most complete single source), ``power.lightingOff``,
+    ``av.<zone>.rooms`` and ``lighting.<host>.rooms``.  This scans any ``rooms`` /
+    ``lightingOff`` key found under a scene message; only strings are kept.
+    """
+    rooms: set[str] = set()
+
+    def _walk(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for key in ("rooms", "lightingOff"):
+                value = obj.get(key)
+                if isinstance(value, dict):
+                    rooms.update(r for r in value if isinstance(r, str))
+                elif isinstance(value, list):
+                    rooms.update(r for r in value if isinstance(r, str))
+            for value in obj.values():
+                _walk(value)
+        elif isinstance(obj, list):
+            for value in obj:
+                _walk(value)
+
+    for message in messages:
+        _walk(message)
+    return {r for r in rooms if r}

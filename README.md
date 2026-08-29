@@ -19,8 +19,9 @@ UDP 9101/9103 discovery). The integration:
 
 1. discovers the control port / `homeId` via a UDP broadcast (or uses one you provide),
 2. connects over WSS (validating nothing, matching the app's own behavior),
-3. performs the `session/devicePresent` handshake and subscribes to state keys,
-4. receives `state/update` pushes and issues `service/request` commands.
+3. logs in with a host-local account (or a cached `hostToken`) and subscribes to state,
+4. discovers the room list from the scene definitions and per-room state keys, then
+   receives `state/update` pushes and issues `service/request` commands.
 
 ## Installation
 
@@ -43,13 +44,14 @@ Settings → Devices & Services → **Add Integration** → **Savant**.
 
 1. Enter the host address. Leave the port blank to auto-discover it (recommended); the
    integration resolves the dynamic control port and `homeId` via a UDP broadcast.
-2. Done — no credentials are required at setup.
+2. **Add a host-local account** via the integration's **Configure** button (local
+   username/password). This is how the host authenticates a headless client — it issues
+   a `hostToken` in exchange for the credentials, no cloud/`cloudToken` needed. Without
+   credentials the host will not serve its state, so entities won't populate.
 
-Optional advanced settings (local username/password, `hostToken`, `cloudToken`,
-`configurationID`, and a list of room names) are available afterwards via the
-integration's **Configure** button. Room names are install-specific and cannot be
-enumerated over the protocol, so list them (comma- or newline-separated) if you want
-room lights/temperature — otherwise only HVAC, audio zones, and global sensors appear.
+Room names are **auto-discovered** (from scene definitions and per-room state keys), so
+there's nothing else to configure. The advanced options also accept a cached
+`hostToken`/`cloudToken`/`configurationID` and a manual room list as an override.
 
 ## Entities
 
@@ -64,8 +66,8 @@ room lights/temperature — otherwise only HVAC, audio zones, and global sensors
 
 These are inherited from the sibling protocol document — see `PROTOCOL.md` §7:
 
-- **`hostToken` derivation** is not yet known. The integration accepts an explicit
-  `hostToken`, or falls back to base64 of `username:password` when both are supplied.
+- **`secretKey`** is issued by the host on login but its purpose is unknown; the
+  integration ignores it.
 - **Room-level light dimming/colour** needs per-load `Address*` values (`DimmerSet`),
   which aren't surfaced by the state bus yet — lights are on/off only.
 - **Shades / fans / door-locks** have observed state keys but no captured set-verbs, so

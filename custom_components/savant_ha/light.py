@@ -17,7 +17,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_NAME,
-    CONF_ROOMS,
     DOMAIN,
     ROOM_BRIGHTNESS,
     ROOM_LIGHTS_ON,
@@ -27,17 +26,11 @@ from .const import (
 from .entity import SavantEntity
 from .hub import SavantHub
 
-_ROOM_LIGHT_ATTRS = (ROOM_LIGHTS_ON, ROOM_BRIGHTNESS)
-
 
 def _discovered_rooms(hub: SavantHub) -> set[str]:
-    rooms: set[str] = set(hub.entry.data.get(CONF_ROOMS) or [])
-    for key in hub.states:
-        for attr in _ROOM_LIGHT_ATTRS:
-            suffix = f".{attr}"
-            if key.endswith(suffix):
-                rooms.add(key[: -len(suffix)])
-    return rooms
+    # hub.rooms = user-supplied rooms + rooms derived from scenes / startZone / state
+    # keys (PROTOCOL.md §6.1).
+    return set(hub.rooms)
 
 
 class SavantLight(SavantEntity, LightEntity):

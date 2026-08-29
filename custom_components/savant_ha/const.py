@@ -56,6 +56,14 @@ URI_STATE_UNREGISTER = "state/unregister"
 URI_STATE_UPDATE = "state/update"
 URI_SERVICE_REQUEST = "service/request"
 URI_DCM_REQUEST = "dcm/request"
+URI_DASHBOARD_REGISTER = "dis/dashboard/register"
+URI_DASHBOARD_UPDATE = "dis/dashboard/update"
+URI_DASHBOARD_REQUEST = "dis/dashboard/request"
+
+# Dashboard RPC verb that returns the scene list (which embeds room names).
+DASHBOARD_REQUEST_SCENES = "GetAVAutomationScenes"
+# State key the host pushes the scene list under (PROTOCOL.md §9).
+SCENES_STATE_KEY = "scenesAndFoldersReduced"
 
 # ---- Service/request verbs (PROTOCOL.md §6) -------------------------------
 VERB_SET_VOLUME = "SetVolume"
@@ -87,12 +95,53 @@ HVAC_STATE_PREFIX = "HVAC Controller.HVAC_controller."
 # Default unit/suffix index observed on HVAC state keys.
 HVAC_UNIT_SUFFIX = "_1"
 
-# Per-room attributes (PROTOCOL.md §5.2).
+# Per-room attributes (PROTOCOL.md §5.2 / §6.1).
 ROOM_CURRENT_VOLUME = "CurrentVolume"
 ROOM_IS_MUTED = "IsMuted"
 ROOM_LIGHTS_ON = "RoomLightsAreOn"
 ROOM_BRIGHTNESS = "BrightnessLevel"
 ROOM_CURRENT_TEMPERATURE = "RoomCurrentTemperature"
+
+# The full observed set of per-room attributes (PROTOCOL.md §6.1).  A room name is the
+# *first* dotted segment of any state key whose *second* segment is one of these — there
+# is no dedicated "get rooms" endpoint, so the room list is derived from these keys and
+# from scene definitions (§6.1).
+ROOM_ATTRIBUTES = (
+    "ActiveService",
+    "ActiveServices",
+    "LastActiveService",
+    "CurrentVolume",
+    "IsMuted",
+    "RelativeVolumeOnly",
+    "RoomLightsAreOn",
+    "BrightnessLevel",
+    "RoomFansAreOn",
+    "RoomShadesAreOpen",
+    "RoomCurrentTemperature",
+    "SleepTimerActive",
+    "SleepTimerRemainingTime",
+)
+
+
+def room_from_state_key(key: str) -> str | None:
+    """Return the room name for a per-room state key, else ``None``.
+
+    A room is the first dotted segment ``R`` of any key whose second segment is a
+    per-room attribute (PROTOCOL.md §6.1), e.g. ``Living Room.RoomCurrentTemperature``
+    -> ``"Living Room"``.
+    """
+    if "." not in key:
+        return None
+    first, rest = key.split(".", 1)
+    second = rest.split(".", 1)[0]
+    if second in ROOM_ATTRIBUTES:
+        return first
+    return None
+
+
+def room_state_keys(rooms: set[str] | list[str]) -> list[str]:
+    """Return the ``<room>.<attr>`` subscription keys for a set of room names."""
+    return [f"{room}.{attr}" for room in rooms for attr in ROOM_ATTRIBUTES]
 
 # Global attributes (PROTOCOL.md §5.4).
 GLOBAL_CURRENT_TEMPERATURE = "global.CurrentTemperature"
@@ -102,10 +151,11 @@ GLOBAL_LIGHTS_ON = "global.LightsAreOn"
 # ``Music.Audio Zone N.SVC_AV_SAVANTMUSIC.<attr>``.
 MUSIC_ZONE_PREFIX = "Music.Audio Zone "
 
-# ---- State subscription defaults (PROTOCOL.md §5) ------------------------
+# ---- State subscription defaults (PROTOCOL.md §5 / §6.1) ------------------
 # These dotted keys are the *observed* surface from the sibling repo's
-# ``savantre/schema.py``.  Room names are install-specific and must be supplied by the
-# user (they cannot be enumerated over the protocol ahead of time).
+# ``savantre/schema.py``.  Room names are host-defined; there is no "get rooms"
+# endpoint, so rooms are derived from scene definitions and per-room state keys
+# (PROTOCOL.md §6.1) and subscribed to dynamically at runtime.
 
 # HVAC attributes, joined as ``<HVAC_STATE_PREFIX><attr><HVAC_UNIT_SUFFIX>``.
 HVAC_STATE_ATTRIBUTES = (
@@ -172,7 +222,8 @@ DEFAULT_MUSIC_ZONES = 2
 def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
     """Return the default dotted state keys to subscribe to.
 
-    ``rooms`` are user-supplied room names; per-room keys are added for each.
+    ``rooms`` are user-supplied room names (optional); additional rooms are discovered
+    at runtime from scene definitions and state keys (PROTOCOL.md §6.1).
     """
     keys: list[str] = [
         f"{HVAC_STATE_PREFIX}{attr}{HVAC_UNIT_SUFFIX}" for attr in HVAC_STATE_ATTRIBUTES
@@ -181,15 +232,7 @@ def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
         for attr in MUSIC_ZONE_ATTRIBUTES:
             keys.append(f"{MUSIC_ZONE_PREFIX}{zone}.{SVC_AV_SAVANTMUSIC}.{attr}")
     keys.extend(GLOBAL_STATE_KEYS)
-    for room in rooms or []:
-        for attr in (
-            ROOM_LIGHTS_ON,
-            ROOM_BRIGHTNESS,
-            ROOM_CURRENT_TEMPERATURE,
-            ROOM_CURRENT_VOLUME,
-            ROOM_IS_MUTED,
-        ):
-            keys.append(f"{room}.{attr}")
+    keys.extend(room_state_keys(set(rooms or [])))
     return keys
 
 

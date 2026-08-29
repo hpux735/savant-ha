@@ -17,10 +17,13 @@ from custom_components.savant_ha.const import (
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
+    room_from_state_key,
+    room_state_keys,
 )
 from custom_components.savant_ha.savant_client import (
     SavantClient,
     SavantHostInfo,
+    rooms_from_scene_messages,
 )
 
 
@@ -146,11 +149,108 @@ def test_subscribe_keys_include_every_category():
     assert "Living Room.RoomCurrentTemperature" in keys
 
 
-def test_username_password_derives_host_token():
-    import base64
-
+def test_local_login_uses_user_password_form():
     client = SavantClient("10.0.0.5", 12345, username="bob", password="secret")
-    assert client._host_token == base64.b64encode(b"bob:secret").decode()
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        await client._send_auth_request()
+
+    asyncio.run(run())
+
+    uri, [auth_msg] = sent[0]
+    assert uri == "session/authenticationRequest"
+    assert auth_msg == {"user": "bob", "password": "secret"}
+
+
+def test_auth_request_omitted_without_credentials():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        await client._send_auth_request()
+
+    asyncio.run(run())
+    assert sent == []
+
+
+def test_device_present_omits_empty_cloud_fields():
+    client = SavantClient("10.0.0.5", 12345, uid="client-uid")
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        await client._send_device_present()
+
+    asyncio.run(run())
+
+    _, [device_msg] = sent[0]
+    assert "cloudToken" not in device_msg
+    assert "configurationID" not in device_msg
+    assert device_msg["messageFormat"] == 2
+
+
+def test_room_from_state_key():
+    assert room_from_state_key("Living Room.RoomCurrentTemperature") == "Living Room"
+    assert room_from_state_key("Living Room.BrightnessLevel") == "Living Room"
+    assert room_from_state_key("Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName") is None
+    assert room_from_state_key("HVAC Controller.HVAC_controller.ThermostatMode_1") is None
+    assert room_from_state_key("global.CurrentTemperature") is None
+
+
+def test_room_state_keys_covers_all_attributes():
+    keys = room_state_keys({"Living Room"})
+    assert "Living Room.RoomLightsAreOn" in keys
+    assert "Living Room.RoomCurrentTemperature" in keys
+    assert "Living Room.RoomFansAreOn" in keys
+
+
+def test_rooms_from_scene_messages():
+    messages = [
+        {
+            "state": "scenesAndFoldersReduced",
+            "value": [
+                {
+                    "definition": {
+                        "power": {"rooms": {"Living Room": 0, "Kitchen": 1}},
+                        "av": {"Audio Zone 1": {"rooms": ["Dining Room"]}},
+                        "lighting": {"host": {"rooms": ["Primary Bedroom"]}},
+                    }
+                }
+            ],
+        }
+    ]
+    rooms = rooms_from_scene_messages(messages)
+    assert rooms == {"Living Room", "Kitchen", "Dining Room", "Primary Bedroom"}
+
+
+def test_auth_response_emits_start_zone():
+    client = SavantClient("10.0.0.5", 12345)
+    seen: list[set[str]] = []
+    client.on_rooms_discovered = lambda rooms: seen.append(set(rooms))
+    client._handle_frame(
+        _frame(
+            {
+                ENVELOPE_KEY_URI: "session/authenticationResponse",
+                ENVELOPE_KEY_MESSAGES: [
+                    {"authorized": True, "startZone": "Living Room", "hostToken": "x"}
+                ],
+            }
+        )
+    )
+    assert client.authorized is True
+    assert seen == [{"Living Room"}]
 
 
 if __name__ == "__main__":

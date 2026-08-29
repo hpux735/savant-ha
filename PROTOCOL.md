@@ -56,33 +56,55 @@ install); `user` = display name (e.g. `"iPhone"`).
 
 ```
 client                            host
-  devicePresent ------------------>   device{UID,make,app,model,OS,type,name}, homeId,
-                                      cloudToken, configurationID, messageFormat:2,
-                                      protocolVersion:"4"
-  authenticationRequest{hostToken} -> hostToken = base64 start/connection token
-  <-- authenticationResponse ------- {authorized, permissions{admin,remote,
+  devicePresent ------------------>   {protocolVersion:"4", homeId, device{UID,make,
+                                      app,model,OS,type,name}, messageFormat:2}
+                                      (cloud path adds cloudToken + configurationID;
+                                      a local-only session omits both)
+  authenticationRequest ---------->   one of two forms:
+      {hostToken}                       cached/cloud credential
+      {user, password}                  LOCAL LOGIN — host account (§4.1)
+  <-- authenticationResponse -------   local:  {authorized, hostToken, secretKey,
+                                      startZone}
+                                       cloud:  {authorized, permissions{admin,remote,
                                       notifications, blacklists}, configurationHash,
                                       configurationUID}
-  state/register [keys...] --------> subscribe
-  <-- state/update {state,value} --- async pushes
+  state/register [keys...] -------->   subscribe
+  dis/<svc>/register ... ---------->
+  <-- state/update / dis/<svc>/update  async pushes
   service/request -------------->   device control (verbs)
   ping "E" <-> pong "E" (2s) -      keepalive
 ```
 
-`authenticationResponse.permissions`: `admin`, `remote`, `notifications` (bool) +
-`serviceBlacklist`/`componentBlacklist`/`zoneBlacklist` (lists).
+### 3.1 Local login (`{user, password}`) — cloud-free auth
+
+The `hostToken` is **not** obtained out-of-band: a host-local account authenticates
+directly (PROTOCOL.md §4.1/§4.9 of the sibling repo). Observed live:
+
+```
+-> session/authenticationRequest  {user:"<LOCAL_USER>", password:"<PASSWORD>"}
+<- session/authenticationResponse {authorized:true,
+                                   secretKey:"<b64 UUID>",   // purpose unknown
+                                   hostToken:"<b64 UUID>",   // fresh, issued per login
+                                   startZone:"<room>"}
+```
+
+So a headless integration can log in with only local credentials — no `cloudToken` /
+`configurationID` required (that session's `devicePresent` carried neither).
 
 ## 4. Endpoints used by this integration
 
 | URI | Direction | Purpose |
 |---|---|---|
 | `session/devicePresent` | client → host | register device |
-| `session/authenticationRequest` | client → host | present `hostToken` |
-| `session/authenticationResponse` | host → client | auth result |
+| `session/authenticationRequest` | client → host | present `hostToken` **or** `{user, password}` |
+| `session/authenticationResponse` | host → client | auth result (`authorized`, `hostToken`, `secretKey`, `startZone`) |
 | `state/register` / `state/unregister` | client → host | subscribe/unsubscribe state keys |
 | `state/update` | host → client | `{state, value}` pushes |
 | `service/request` | client → host | **device control** (§6) |
 | `dcm/request` | client → host | device-control-manager RPC (e.g. `getMode`) |
+| `dis/dashboard/register` | client → host | subscribe to dashboard/scene pushes |
+| `dis/dashboard/request` | client → host | scene RPC (e.g. `GetAVAutomationScenes`) |
+| `dis/dashboard/update` | host → client | scene-list pushes (`scenesAndFoldersReduced`) |
 
 ## 5. State model (dotted keys)
 
@@ -94,10 +116,29 @@ client                            host
 - Boolean mode/speed flags: `IsCurrentHVACMode{Off,Cool,Heat,Auto,...}`, `IsCurrentFanSpeed*`,
   `IsThermostatCurrentFanMode{Auto,On,Off}`, `IsThermostatHolding`, `ThermostatAwayState`.
 
-### 5.2 Rooms — `<Room>.*`
-`ActiveService`, `CurrentVolume(int)`, `IsMuted(bool)`, `RoomLightsAreOn(bool)`,
+### 5.2 Rooms — `<Room>.*` (+ how to derive the room list)
+
+Per-room attributes: `ActiveService`, `ActiveServices`, `LastActiveService`,
+`CurrentVolume(int)`, `IsMuted(bool)`, `RelativeVolumeOnly(bool)`, `RoomLightsAreOn(bool)`,
 `BrightnessLevel(int 0-100)`, `RoomFansAreOn(bool)`, `RoomShadesAreOpen(bool)`,
 `RoomCurrentTemperature(num)`, `SleepTimerActive(bool)`, `SleepTimerRemainingTime(num)`.
+
+**Deriving the room list (no dedicated "get rooms" endpoint).** Room names are arbitrary
+host-defined strings; the full set is inferred from (PROTOCOL.md §6.1 of the sibling):
+
+1. **State-key namespace** — a room is the first dotted segment `R` of any state key
+   whose *second* segment is a per-room attribute (list above). No wildcard registration
+   exists: subscribe to each `<room>.<attr>` key explicitly.
+2. **Scene definitions** — `dis/dashboard` scene objects embed room names:
+   `definition.power.rooms` (a map keyed by **every** room — the most complete single
+   source), `power.lightingOff`, `av.<zone>.rooms`, `lighting.<host>.rooms`.
+3. **`startZone`** on `session/authenticationResponse` names the room the session opens
+   in (one room, not the full list).
+
+This integration subscribes to `dis/dashboard` (register + `GetAVAutomationScenes`) to
+harvest room names, takes `startZone` from the auth response, and additionally derives
+rooms from any `<room>.<attr>` state key it sees; each newly discovered room's per-room
+keys are then registered.
 
 ### 5.3 Audio zones — `Music.Audio Zone N.SVC_AV_SAVANTMUSIC.*`
 `ZonesActiveIn`, `CurrentSongName`, `CurrentArtistName`, `CurrentAlbumName`,
@@ -135,17 +176,25 @@ HVAC scope: `component:"HVAC Controller"`, `serviceType:"SVC_ENV_HVAC"`, `varian
 
 ## 7. Open questions (carried over from the sibling repo)
 
-1. **`hostToken` derivation** — base64 of what? The local-user login path is not yet
-   fully decoded; the integration therefore accepts an explicit `hostToken` /
-   `cloudToken` / `configurationID` from the user and documents its best-effort default
-   (see `const.py`).
-2. Full verb list for **shades / fans / door-locks / garage** control (expected under
+1. **`secretKey` purpose** — issued alongside `hostToken` on local login, but never
+   re-sent in the capture; unknown what it signs/encrypts (sibling PROTOCOL.md §13.3).
+2. **`hostToken` persistence** — issued fresh per local login; whether it can be cached
+   across sessions is unconfirmed (the integration re-logs-in with `{user, password}`
+   each reconnect).
+3. Full verb list for **shades / fans / door-locks / garage** control (expected under
    `service/request`, not yet captured) — shade/fan command verbs are NOT implemented
    here; their state keys are observed but no set-verb is known.
-3. **Play / pause / mute / power-off** verbs for media transport are not in the observed
+4. **Play / pause / mute / power-off** verbs for media transport are not in the observed
    catalog yet (only `PowerOn`/`SetVolume`); media player entities expose the *known*
    commands only.
-4. `state/update` delta vs. snapshot semantics; multi-frame (`fin=0`) gzip streaming.
-5. Scene trigger verb — `dis/dashboard/request` verbs (`CaptureScene`, `UpsertScene`,
+5. `state/update` delta vs. snapshot semantics; multi-frame (`fin=0`) gzip streaming.
+6. Scene trigger verb — `dis/dashboard/request` verbs (`CaptureScene`, `UpsertScene`,
    `RemoveScene`, `GetAVAutomationScenes`) are known but the "run scene" verb is not
    yet confirmed.
+7. Component/logical names are host-config-dependent (`<music-component>`,
+   `<hvac-component>`, `<hvac-controller>`, `<host-component>`); this integration
+   defaults to the observed names (`Music`, `HVAC Controller`, `HVAC_controller`) but
+   does not yet re-derive them from the state-key namespace.
+8. Temperature scale is observable via `SchedulerSettings.TemperatureScale`
+   (`"Fahrenheit"`|`"Celsius"`); the integration currently assumes Fahrenheit instead of
+   reading it.

@@ -32,6 +32,8 @@ from .const import (
     DOMAIN,
     LOGGER,
     build_default_subscribe_keys,
+    room_from_state_key,
+    room_state_keys,
 )
 from .savant_client import SavantClient
 
@@ -62,6 +64,9 @@ class SavantHub:
         data = dict(entry.data)
         options = dict(entry.options or {})
         self.uid = data.get("uid") or uuid.uuid4().hex
+        # Known rooms: user-supplied ones (optional) + rooms discovered at runtime from
+        # scene definitions / startZone / per-room state keys (PROTOCOL.md §6.1).
+        self.rooms: set[str] = set(options.get(CONF_ROOMS) or [])
 
         self.client = SavantClient(
             host=data[CONF_HOST],
@@ -73,10 +78,11 @@ class SavantHub:
             host_token=options.get(CONF_HOST_TOKEN) or None,
             username=options.get(CONF_USERNAME, ""),
             password=options.get(CONF_PASSWORD, ""),
-            subscribe_keys=build_default_subscribe_keys(options.get(CONF_ROOMS) or []),
+            subscribe_keys=build_default_subscribe_keys(list(self.rooms)),
         )
         self.client.on_state_update = self._on_state_update
         self.client.on_status = self._on_status
+        self.client.on_rooms_discovered = self._on_rooms_discovered
         self.coordinator = SavantCoordinator(hass, self)
 
     # ------------------------------------------------------------- lifecycle
@@ -103,6 +109,22 @@ class SavantHub:
     @callback
     def _on_state_update(self, state: str, value: Any) -> None:
         self.states[state] = value
+        # Derive new rooms from per-room state keys and subscribe to their other keys
+        # (PROTOCOL.md §6.1: rooms are the first segments of per-room keys).
+        room = room_from_state_key(state)
+        if room and room not in self.rooms:
+            self._on_rooms_discovered({room})
+        self._schedule_flush()
+
+    @callback
+    def _on_rooms_discovered(self, rooms: set[str]) -> None:
+        new_rooms = rooms - self.rooms
+        if not new_rooms:
+            return
+        self.rooms |= new_rooms
+        LOGGER.debug("Savant discovered rooms: %s", sorted(new_rooms))
+        # Subscribe to each new room's per-room state keys.
+        self.hass.loop.create_task(self.client.register_state_keys(room_state_keys(new_rooms)))
         self._schedule_flush()
 
     @callback
