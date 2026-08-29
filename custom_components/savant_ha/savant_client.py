@@ -109,6 +109,10 @@ _RECORD_FIELDS = frozenset(
     {"port", "name", "homeId", "UID", "scheme", "hostModel", "buildVersion"}
 )
 
+# Discovery-record keys that must never appear in logs (PII per AGENTS.md): homeId,
+# device UIDs, onboarding keys, and the operator's host/project names.
+_REDACT_KEYS = frozenset({"UID", "onboardKey", "homeId", "userHostName"})
+
 
 def _pack(obj: Any) -> bytes:
     return msgpack.packb(obj, use_bin_type=True)
@@ -171,7 +175,7 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
         "Savant discovery: %d raw reply(ies) for %s: %s",
         len(proto.results),
         host,
-        {addr: {k: v for k, v in rec.items() if k not in ("UID", "onboardKey")}
+        {addr: {k: v for k, v in rec.items() if k not in _REDACT_KEYS}
          for addr, rec in proto.results.items()},
     )
     if not proto.results:
@@ -180,13 +184,23 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
             "on the same network (L2) as the host?",
             host,
         )
-    # Only a record carrying a valid control port is usable (PROTOCOL.md §1.1).
-    for addr, record in proto.results.items():
+    # Prefer the record from the queried host address (other Savant hosts/proxies may
+    # answer the same broadcast); fall back to any record with a valid control port
+    # (PROTOCOL.md §1.1).
+
+    def _record_port(record: dict[str, Any]) -> int:
         try:
-            port = int(record.get("port", 0))
+            return int(record.get("port", 0))
         except (TypeError, ValueError):
+            return 0
+
+    own = proto.results.get(host)
+    if own is not None and _record_port(own) > 0:
+        return SavantHostInfo.from_record(host, own)
+    for addr, record in proto.results.items():
+        if addr == host:
             continue
-        if port > 0:
+        if _record_port(record) > 0:
             return SavantHostInfo.from_record(addr, record)
     return None
 
@@ -351,7 +365,10 @@ class SavantClient:
     def _ssl_context(self) -> ssl.SSLContext:
         # The host presents a generic self-signed cert and the app validates nothing
         # (PROTOCOL.md §1).  Reproduce that: TLS for privacy, not authentication.
-        ctx = ssl.create_default_context()
+        # NOTE: ssl.create_default_context() eagerly loads the system trust store
+        # (set_default_verify_paths) — blocking I/O that HA flags inside the event
+        # loop.  Build a bare context instead, since we verify nothing.
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
