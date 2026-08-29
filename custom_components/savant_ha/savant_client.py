@@ -185,6 +185,7 @@ async def probe_host(
 
     client.on_rooms_discovered = _on_rooms
     client.on_state_update = _on_state
+    LOGGER.info("Savant probe: connecting to %s:%s to collect devices", host, port)
     await client._connect()
     receive = asyncio.ensure_future(client._receive_loop())
     try:
@@ -195,6 +196,13 @@ async def probe_host(
             await receive
         await client._disconnect()
     info.authorized = client.authorized
+    LOGGER.info(
+        "Savant probe: authorized=%s rooms=%d hvac=%d zones=%d",
+        info.authorized,
+        len(info.rooms),
+        len(info.hvac_suffixes),
+        len(info.zones),
+    )
     return info
 
 
@@ -643,7 +651,10 @@ class SavantClient:
     def _handle_auth_response(self, messages: list[Any]) -> None:
         first = messages[0] if messages and isinstance(messages[0], dict) else {}
         self._authorized = bool(first.get("authorized", False))
-        LOGGER.debug("Savant authentication %s", "ok" if self._authorized else "denied")
+        if self._authorized:
+            LOGGER.info("Savant login successful")
+        else:
+            LOGGER.warning("Savant login denied — check the host-local username/password")
         # startZone names the room the session opens in (PROTOCOL.md §4.1/§6.1).
         start_zone = first.get("startZone")
         if isinstance(start_zone, str) and start_zone:
