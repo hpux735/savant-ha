@@ -42,18 +42,17 @@ git clone https://git.housedillon.com/wdillon/savant-ha2.git savant_ha
 
 Settings → Devices & Services → **Add Integration** → **Savant**.
 
-1. Enter the host address. Leave the port blank to auto-discover it (recommended); the
-   integration resolves the dynamic control port and `homeId` via a UDP broadcast.
-2. **Add a host-local account** via the integration's **Configure** button (local
-   username/password). This is how the host authenticates a headless client — it issues
-   a `hostToken` in exchange for the credentials, no cloud/`cloudToken` needed. Without
-   credentials the host will not serve its state, so entities won't populate.
+1. Enter the host address (leave the port blank to auto-discover it — recommended).
+2. **Log in** with a host-local account (username/password). This is how the host
+   authenticates a headless client; on success the integration connects, authenticates,
+   and collects every discoverable room / thermostat / audio zone.
+3. **Choose the devices** to import and override each one's area; on accept the matching
+   entities are created in Home Assistant (you can move them freely afterwards).
 
-Room names are **auto-discovered** (from scene definitions and per-room state keys), so
-there's nothing else to configure. The advanced options also accept a cached
-`hostToken`/`cloudToken`/`configurationID` and a manual room list as an override.
+Optional advanced settings (a cached `hostToken`, `cloudToken`/`configurationID`, or
+extra room names) live behind the integration's **Configure** button.
 
-## Entities
+## Entities (created only for the devices you import)
 
 | Platform | Source state keys | Notes |
 |---|---|---|

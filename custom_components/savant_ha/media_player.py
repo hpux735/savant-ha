@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    DEFAULT_MUSIC_ZONES,
+    DEVICE_TYPE_AUDIO_ZONE,
     DOMAIN,
     MUSIC_ZONE_PREFIX,
     ROOM_CURRENT_VOLUME,
@@ -54,8 +54,13 @@ def _active_rooms(hub: SavantHub, zone: int) -> list[str]:
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     """A single Savant audio zone."""
 
-    def __init__(self, hub: SavantHub, zone: int) -> None:
-        super().__init__(hub)
+    def __init__(self, hub: SavantHub, zone: int, area: str = "") -> None:
+        super().__init__(
+            hub,
+            device_key=f"audio_zone:{zone}",
+            device_name=f"Audio Zone {zone}",
+            area=area,
+        )
         self._zone = zone
         self._attr_unique_id = f"{hub.uid}_audio_zone_{zone}"
         self._attr_name = f"Audio Zone {zone}"
@@ -136,7 +141,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
 
 def _discovered_zones(hub: SavantHub) -> set[int]:
-    zones: set[int] = set(range(1, DEFAULT_MUSIC_ZONES + 1))
+    zones: set[int] = set()
     marker = MUSIC_ZONE_PREFIX
     for key in hub.states:
         if key.startswith(marker):
@@ -150,6 +155,17 @@ def _discovered_zones(hub: SavantHub) -> set[int]:
 
 
 def _build_entities(hub: SavantHub) -> list[SavantMediaPlayer]:
+    if hub.devices is not None:
+        entities: list[SavantMediaPlayer] = []
+        for device in hub.devices:
+            if device.get("type") != DEVICE_TYPE_AUDIO_ZONE:
+                continue
+            try:
+                zone = int(device["id"])
+            except (TypeError, ValueError):
+                continue
+            entities.append(SavantMediaPlayer(hub, zone, area=device.get("area", "")))
+        return entities
     return [SavantMediaPlayer(hub, zone) for zone in sorted(_discovered_zones(hub))]
 
 

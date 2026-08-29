@@ -1,13 +1,13 @@
 """Config flow for the Savant integration.
 
-The primary flow is a single step: enter the host address (and, optionally, an explicit
-control port).  The control port and ``homeId`` are auto-discovered over UDP
-(PROTOCOL.md §1.1) when no port is given.
+Three steps, matching the standard device-import UX:
 
-Advanced settings (credentials and a list of room names) are deliberately *not* asked
-during setup — a new user has no idea what "cloud token" or "host token" mean.  They are
-instead exposed later via the integration's "Configure" button (options flow) for
-power users, and default to sane empty values.
+1. **user** — host address (+ optional explicit port). UDP discovery resolves the
+   control port / ``homeId``.
+2. **login** — the host-local account (``{user, password}``, PROTOCOL.md §4.1). The
+   integration connects, authenticates, and collects the discoverable device surface.
+3. **devices** — the collected rooms / thermostats / audio zones, each with an area
+   override. On accept, the entry is created with the approved device list.
 """
 
 from __future__ import annotations
@@ -24,14 +24,18 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_CLOUD_TOKEN,
     CONF_CONFIGURATION_ID,
+    CONF_DEVICES,
     CONF_HOME_ID,
     CONF_HOST_TOKEN,
     CONF_NAME,
     CONF_ROOMS,
+    DEVICE_TYPE_AUDIO_ZONE,
+    DEVICE_TYPE_HVAC,
+    DEVICE_TYPE_ROOM,
     DOMAIN,
     LOGGER,
 )
-from .savant_client import SavantHostInfo, discover_host
+from .savant_client import SavantDeviceInfo, SavantHostInfo, discover_host, probe_host
 
 _USER_SCHEMA = vol.Schema(
     {
@@ -41,6 +45,13 @@ _USER_SCHEMA = vol.Schema(
                 min=1, max=65535, mode=selector.NumberSelectorMode.BOX
             )
         ),
+    }
+)
+
+_LOGIN_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): str,
+        vol.Required(CONF_PASSWORD): str,
     }
 )
 
@@ -65,50 +76,175 @@ def _parse_rooms(raw: Any) -> list[str]:
     return list(dict.fromkeys(r for r in rooms if r))
 
 
+def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
+    devices: list[dict[str, str]] = []
+    for room in sorted(info.rooms):
+        devices.append(
+            {"type": DEVICE_TYPE_ROOM, "id": room, "name": room, "area": room}
+        )
+    for suffix in sorted(info.hvac_suffixes):
+        label = "Thermostat" if suffix == "_1" else f"Thermostat {suffix.lstrip('_')}"
+        devices.append(
+            {"type": DEVICE_TYPE_HVAC, "id": suffix, "name": label, "area": ""}
+        )
+    for zone in sorted(info.zones):
+        devices.append(
+            {
+                "type": DEVICE_TYPE_AUDIO_ZONE,
+                "id": str(zone),
+                "name": f"Audio Zone {zone}",
+                "area": "",
+            }
+        )
+    return devices
+
+
+def _devices_schema(devices: list[dict[str, str]]) -> vol.Schema:
+    fields: dict[Any, Any] = {}
+    for index, device in enumerate(devices):
+        fields[
+            vol.Optional(f"include_{index}", default=True, description=device["name"])
+        ] = bool
+        fields[
+            vol.Optional(
+                f"area_{index}",
+                default=device.get("area", ""),
+                description=device["name"],
+            )
+        ] = str
+    return vol.Schema(fields)
+
+
 class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a host-only setup."""
+    """Host discovery -> login -> device picker."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        self._host: str = ""
+        self._port: int = 0
+        self._name: str = ""
+        self._home_id: str = ""
+        self._username: str = ""
+        self._password: str = ""
+        self._devices: list[dict[str, str]] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            host = user_input[CONF_HOST].strip()
+            self._host = user_input[CONF_HOST].strip()
             port = user_input.get(CONF_PORT)
-            name = ""
-            home_id = ""
 
-            info = await self._discover(host)
-            if port:
-                # Explicit port: discovery is still consulted (best-effort) to enrich
-                # the entry with the host name / homeId.
-                if info is not None:
-                    name = info.name
-                    home_id = info.home_id
-            elif info is not None and info.port > 0:
-                port = info.port
-                name = info.name
-                home_id = info.home_id
+            info: SavantHostInfo | None = None
+            if not port:
+                info = await self._discover(self._host)
+                if info is None or info.port <= 0:
+                    errors[CONF_PORT] = "discovery_failed"
+                else:
+                    self._port = info.port
+                    self._name = info.name
+                    self._home_id = info.home_id
             else:
-                errors[CONF_PORT] = "discovery_failed"
+                self._port = int(port)
+                # Best-effort enrich name/homeId even with an explicit port.
+                info = await self._discover(self._host)
+                if info is not None:
+                    self._name = info.name
+                    self._home_id = info.home_id
 
             if not errors:
-                await self.async_set_unique_id(f"{host}:{port}")
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=name or host,
-                    data={
-                        CONF_HOST: host,
-                        CONF_PORT: int(port),
-                        CONF_NAME: name,
-                        CONF_HOME_ID: home_id,
+                return self.async_show_form(
+                    step_id="login",
+                    data_schema=_LOGIN_SCHEMA,
+                    description_placeholders={
+                        "host": self._host,
+                        "name": self._name or self._host,
                     },
                 )
 
         return self.async_show_form(
             step_id="user", data_schema=_USER_SCHEMA, errors=errors
+        )
+
+    async def async_step_login(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._username = user_input[CONF_USERNAME]
+            self._password = user_input[CONF_PASSWORD]
+
+            try:
+                probe = await probe_host(
+                    self._host,
+                    self._port,
+                    home_id=self._home_id,
+                    username=self._username,
+                    password=self._password,
+                    timeout=20.0,
+                )
+            except Exception:  # noqa: BLE001 - surface a generic connect error
+                LOGGER.exception("Savant probe failed")
+                probe = None
+
+            if probe is None:
+                errors["base"] = "cannot_connect"
+            elif not probe.authorized:
+                errors["base"] = "invalid_auth"
+            else:
+                self._devices = _devices_from_info(probe)
+                if not self._devices:
+                    errors["base"] = "no_devices"
+                else:
+                    return self.async_show_form(
+                        step_id="devices",
+                        data_schema=_devices_schema(self._devices),
+                        description_placeholders={
+                            "count": str(len(self._devices)),
+                            "host": self._host,
+                        },
+                    )
+
+        return self.async_show_form(
+            step_id="login",
+            data_schema=_LOGIN_SCHEMA,
+            errors=errors,
+            description_placeholders={"host": self._host, "name": self._name or self._host},
+        )
+
+    async def async_step_devices(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
+            approved: list[dict[str, str]] = []
+            for index, device in enumerate(self._devices):
+                if not user_input.get(f"include_{index}", True):
+                    continue
+                entry = dict(device)
+                entry["area"] = user_input.get(f"area_{index}", "") or ""
+                approved.append(entry)
+
+            await self.async_set_unique_id(self._host)
+            self._abort_if_unique_id_configured()
+            return self.async_create_entry(
+                title=self._name or self._host,
+                data={
+                    CONF_HOST: self._host,
+                    CONF_PORT: self._port,
+                    CONF_NAME: self._name,
+                    CONF_HOME_ID: self._home_id,
+                    CONF_USERNAME: self._username,
+                    CONF_PASSWORD: self._password,
+                    CONF_DEVICES: approved,
+                },
+            )
+
+        return self.async_show_form(
+            step_id="devices",
+            data_schema=_devices_schema(self._devices),
+            description_placeholders={"count": str(len(self._devices)), "host": self._host},
         )
 
     async def _discover(self, host: str) -> SavantHostInfo | None:

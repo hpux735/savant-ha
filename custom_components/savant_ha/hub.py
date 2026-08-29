@@ -22,6 +22,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import (
     CONF_CLOUD_TOKEN,
     CONF_CONFIGURATION_ID,
+    CONF_DEVICES,
     CONF_HOME_ID,
     CONF_HOST,
     CONF_HOST_TOKEN,
@@ -29,6 +30,7 @@ from .const import (
     CONF_PORT,
     CONF_ROOMS,
     CONF_USERNAME,
+    DEVICE_TYPE_ROOM,
     DOMAIN,
     LOGGER,
     build_default_subscribe_keys,
@@ -64,9 +66,16 @@ class SavantHub:
         data = dict(entry.data)
         options = dict(entry.options or {})
         self.uid = data.get("uid") or uuid.uuid4().hex
-        # Known rooms: user-supplied ones (optional) + rooms discovered at runtime from
-        # scene definitions / startZone / per-room state keys (PROTOCOL.md §6.1).
+        # The approved device list from the config-flow picker (None for legacy entries
+        # that predate the picker — platforms then fall back to dynamic discovery).
+        self.devices: list[dict[str, str]] | None = data.get(CONF_DEVICES)
+        # Known rooms: approved room devices + user-supplied override rooms + rooms
+        # discovered at runtime (PROTOCOL.md §6.1).
         self.rooms: set[str] = set(options.get(CONF_ROOMS) or [])
+        if self.devices is not None:
+            for device in self.devices:
+                if device.get("type") == DEVICE_TYPE_ROOM:
+                    self.rooms.add(device["id"])
 
         self.client = SavantClient(
             host=data[CONF_HOST],
@@ -76,8 +85,8 @@ class SavantHub:
             cloud_token=options.get(CONF_CLOUD_TOKEN, ""),
             configuration_id=options.get(CONF_CONFIGURATION_ID, ""),
             host_token=options.get(CONF_HOST_TOKEN) or None,
-            username=options.get(CONF_USERNAME, ""),
-            password=options.get(CONF_PASSWORD, ""),
+            username=options.get(CONF_USERNAME) or data.get(CONF_USERNAME, ""),
+            password=options.get(CONF_PASSWORD) or data.get(CONF_PASSWORD, ""),
             subscribe_keys=build_default_subscribe_keys(list(self.rooms)),
         )
         self.client.on_state_update = self._on_state_update

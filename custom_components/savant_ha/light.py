@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_NAME,
+    DEVICE_TYPE_ROOM,
     DOMAIN,
     ROOM_BRIGHTNESS,
     ROOM_LIGHTS_ON,
@@ -28,9 +29,15 @@ from .hub import SavantHub
 
 
 def _discovered_rooms(hub: SavantHub) -> set[str]:
-    # hub.rooms = user-supplied rooms + rooms derived from scenes / startZone / state
-    # keys (PROTOCOL.md §6.1).
-    return set(hub.rooms)
+    # Only rooms that the host actually reports lighting for (no speculative entities).
+    rooms: set[str] = set()
+    for room in hub.rooms:
+        if (
+            f"{room}.{ROOM_LIGHTS_ON}" in hub.states
+            or f"{room}.{ROOM_BRIGHTNESS}" in hub.states
+        ):
+            rooms.add(room)
+    return rooms
 
 
 class SavantLight(SavantEntity, LightEntity):
@@ -38,8 +45,10 @@ class SavantLight(SavantEntity, LightEntity):
 
     _attr_supported_color_modes = {ColorMode.ONOFF}
 
-    def __init__(self, hub: SavantHub, room: str) -> None:
-        super().__init__(hub)
+    def __init__(self, hub: SavantHub, room: str, area: str = "") -> None:
+        super().__init__(
+            hub, device_key=f"room:{room}", device_name=room, area=area
+        )
         self._room = room
         self._attr_unique_id = f"{hub.uid}_light_{room}"
         self._attr_name = room
@@ -90,6 +99,12 @@ class SavantLight(SavantEntity, LightEntity):
 
 
 def _build_entities(hub: SavantHub) -> list[SavantLight]:
+    if hub.devices is not None:
+        return [
+            SavantLight(hub, device["id"], area=device.get("area", ""))
+            for device in hub.devices
+            if device.get("type") == DEVICE_TYPE_ROOM
+        ]
     return [SavantLight(hub, room) for room in sorted(_discovered_rooms(hub))]
 
 

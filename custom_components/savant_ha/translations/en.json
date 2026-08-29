@@ -8,10 +8,29 @@
           "host": "Host address",
           "port": "Port (optional)"
         }
+      },
+      "login": {
+        "title": "Log in to Savant host",
+        "description": "Log in with a host-local account ({host}, “{name}”). This is how the host authenticates a headless client.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "devices": {
+        "title": "Savant devices found",
+        "description": "{count} device(s) found on {host}. Choose which to import and set the area for each. You can move them later in Home Assistant.",
+        "data": {
+          "include_0": "Import",
+          "area_0": "Area"
+        }
       }
     },
     "error": {
-      "discovery_failed": "Could not discover the host's control port. Provide an explicit port."
+      "discovery_failed": "Could not discover the host's control port. Provide an explicit port.",
+      "invalid_auth": "Login failed — check the host-local username and password.",
+      "cannot_connect": "Could not connect to the host on the discovered port.",
+      "no_devices": "Connected and authenticated, but no rooms or devices were reported by the host."
     },
     "abort": {
       "already_configured": "This host is already configured."
@@ -21,14 +40,14 @@
     "step": {
       "init": {
         "title": "Savant advanced options",
-        "description": "These are optional and only needed for special setups. Leave blank if unsure.",
+        "description": "Optional. Update the local account or add a cached hostToken / cloud credentials. Leave blank to keep the current value.",
         "data": {
           "username": "Local username",
           "password": "Local password",
           "host_token": "Host token",
           "cloud_token": "Cloud token",
           "configuration_id": "Configuration ID",
-          "rooms": "Room names (comma or newline separated)"
+          "rooms": "Extra room names (comma or newline separated)"
         }
       }
     }

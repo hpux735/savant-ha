@@ -26,6 +26,12 @@ CONF_HOME_ID = "home_id"  # discovered from the 9101 control record
 CONF_UID = "uid"  # generated client device UUID
 CONF_NAME = "name"  # discovered host name
 CONF_ROOMS = "rooms"  # user-supplied room names (list[str])
+CONF_DEVICES = "devices"  # user-approved device list (list[dict]) from the picker step
+
+# Device kinds in the approved device list.
+DEVICE_TYPE_ROOM = "room"
+DEVICE_TYPE_HVAC = "hvac"
+DEVICE_TYPE_AUDIO_ZONE = "audio_zone"
 
 # ---- Protocol (PROTOCOL.md §1) --------------------------------------------
 # WebSocket subprotocol negotiated on the control channel.

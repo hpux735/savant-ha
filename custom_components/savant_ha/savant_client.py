@@ -44,9 +44,11 @@ from .const import (
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
     ENVELOPE_KEY_USER,
+    HVAC_STATE_PREFIX,
     KEEPALIVE_BYTE,
     KEEPALIVE_INTERVAL,
     LOGGER,
+    MUSIC_ZONE_PREFIX,
     RPM_SUBPROTOCOL,
     URI_AUTH_REQUEST,
     URI_AUTH_RESPONSE,
@@ -56,6 +58,8 @@ from .const import (
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
+    build_default_subscribe_keys,
+    room_from_state_key,
 )
 
 _StateCallback = Callable[[str, Any], None]
@@ -112,6 +116,86 @@ _RECORD_FIELDS = frozenset(
 # Discovery-record keys that must never appear in logs (PII per AGENTS.md): homeId,
 # device UIDs, onboarding keys, and the operator's host/project names.
 _REDACT_KEYS = frozenset({"UID", "onboardKey", "homeId", "userHostName"})
+
+
+@dataclass
+class SavantDeviceInfo:
+    """The discoverable device surface collected during setup (PROTOCOL.md §6.1).
+
+    Rooms come from scene definitions / ``startZone``; HVAC units and audio zones from
+    the subscribed state keys.
+    """
+
+    rooms: set[str] = field(default_factory=set)
+    hvac_suffixes: set[str] = field(default_factory=set)
+    zones: set[int] = field(default_factory=set)
+    authorized: bool = False
+
+
+async def probe_host(
+    host: str,
+    port: int,
+    *,
+    uid: str | None = None,
+    home_id: str = "",
+    username: str = "",
+    password: str = "",
+    host_token: str | None = None,
+    cloud_token: str = "",
+    configuration_id: str = "",
+    timeout: float = 15.0,
+) -> SavantDeviceInfo:
+    """One-shot probe: connect, authenticate, and collect the device surface.
+
+    Runs the normal handshake (devicePresent -> auth -> state/dashboard subscription)
+    for ``timeout`` seconds, then disconnects.  Used by the config flow to build the
+    device picker.
+    """
+    client = SavantClient(
+        host,
+        port,
+        uid=uid,
+        home_id=home_id,
+        username=username,
+        password=password,
+        host_token=host_token,
+        cloud_token=cloud_token,
+        configuration_id=configuration_id,
+        subscribe_keys=build_default_subscribe_keys([]),
+    )
+    info = SavantDeviceInfo()
+
+    def _on_rooms(rooms: set[str]) -> None:
+        info.rooms.update(rooms)
+
+    def _on_state(key: str, value: Any) -> None:  # noqa: ARG001 - value unused here
+        room = room_from_state_key(key)
+        if room:
+            info.rooms.add(room)
+        marker = f"{HVAC_STATE_PREFIX}ThermostatCurrentTemperature"
+        if key.startswith(marker):
+            info.hvac_suffixes.add(key[len(marker):])
+        if key.startswith(MUSIC_ZONE_PREFIX):
+            rest = key[len(MUSIC_ZONE_PREFIX):]
+            if "." in rest:
+                try:
+                    info.zones.add(int(rest.split(".", 1)[0]))
+                except ValueError:
+                    pass
+
+    client.on_rooms_discovered = _on_rooms
+    client.on_state_update = _on_state
+    await client._connect()
+    receive = asyncio.ensure_future(client._receive_loop())
+    try:
+        await asyncio.sleep(timeout)
+    finally:
+        receive.cancel()
+        with suppress(Exception):
+            await receive
+        await client._disconnect()
+    info.authorized = client.authorized
+    return info
 
 
 def _pack(obj: Any) -> bytes:

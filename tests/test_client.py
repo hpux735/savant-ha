@@ -24,6 +24,7 @@ from custom_components.savant_ha.const import (
 from custom_components.savant_ha.savant_client import (
     SavantClient,
     SavantHostInfo,
+    probe_host,
     rooms_from_scene_messages,
 )
 
@@ -275,6 +276,36 @@ def test_refresh_discovery_keeps_zero_port(monkeypatch):
     monkeypatch.setattr(sc, "discover_host", fake_discover)
     asyncio.run(client._refresh_discovery())
     assert client._port == 0
+
+
+def test_probe_host_collects_device_surface(monkeypatch):
+    async def fake_connect(self):
+        self._authorized = True
+        self.on_rooms_discovered({"Living Room", "Kitchen"})
+        self.on_state_update(
+            "HVAC Controller.HVAC_controller.ThermostatCurrentTemperature_1", 72
+        )
+        self.on_state_update(
+            "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName", "Song"
+        )
+
+    async def fake_receive_loop(self):
+        await asyncio.sleep(0.001)
+
+    async def fake_disconnect(self):
+        pass
+
+    monkeypatch.setattr(sc.SavantClient, "_connect", fake_connect)
+    monkeypatch.setattr(sc.SavantClient, "_receive_loop", fake_receive_loop)
+    monkeypatch.setattr(sc.SavantClient, "_disconnect", fake_disconnect)
+
+    info = asyncio.run(
+        probe_host("10.0.0.5", 12345, username="u", password="p", timeout=0.05)
+    )
+    assert info.authorized is True
+    assert info.rooms == {"Living Room", "Kitchen"}
+    assert info.hvac_suffixes == {"_1"}
+    assert info.zones == {1}
 
 
 if __name__ == "__main__":

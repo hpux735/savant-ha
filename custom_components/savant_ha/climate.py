@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    DEVICE_TYPE_HVAC,
     DOMAIN,
     HVAC_STATE_PREFIX,
     SCOPE_HVAC,
@@ -73,8 +74,8 @@ class SavantClimate(SavantEntity, ClimateEntity):
     _attr_max_temp = 90
     _attr_target_temperature_step = 1.0
 
-    def __init__(self, hub: SavantHub, suffix: str) -> None:
-        super().__init__(hub)
+    def __init__(self, hub: SavantHub, suffix: str, area: str = "") -> None:
+        super().__init__(hub, device_key=f"hvac:{suffix}", device_name="Thermostat", area=area)
         self._suffix = suffix
         self._attr_unique_id = f"{hub.uid}_hvac_{suffix.lstrip('_')}"
         self._attr_name = "Thermostat"
@@ -155,8 +156,13 @@ def _discovered_suffixes(hub: SavantHub) -> set[str]:
 
 
 def _build_entities(hub: SavantHub) -> list[SavantClimate]:
-    suffixes = _discovered_suffixes(hub) | {"_1"}
-    return [SavantClimate(hub, suffix) for suffix in sorted(suffixes)]
+    if hub.devices is not None:
+        return [
+            SavantClimate(hub, device["id"], area=device.get("area", ""))
+            for device in hub.devices
+            if device.get("type") == DEVICE_TYPE_HVAC
+        ]
+    return [SavantClimate(hub, suffix) for suffix in sorted(_discovered_suffixes(hub))]
 
 
 async def async_setup_entry(
