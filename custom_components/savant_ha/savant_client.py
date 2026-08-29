@@ -144,9 +144,12 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
 
     loop = asyncio.get_running_loop()
     proto = _Proto()
-    transport, _ = await loop.create_datagram_endpoint(
-        lambda: proto, local_addr=("0.0.0.0", 0), family=socket.AF_INET
-    )
+    # SO_BROADCAST is required to send to 255.255.255.255; without it the broadcast
+    # send silently fails on some platforms (and the unicast probe is the fallback).
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.bind(("0.0.0.0", 0))
+    transport, _ = await loop.create_datagram_endpoint(lambda: proto, sock=sock)
     targets = {
         (host, DISCOVERY_PORT_CONTROL),
         (host, DISCOVERY_PORT_PRESENCE),
@@ -171,6 +174,12 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
         {addr: {k: v for k, v in rec.items() if k not in ("UID", "onboardKey")}
          for addr, rec in proto.results.items()},
     )
+    if not proto.results:
+        LOGGER.warning(
+            "Savant discovery: no reply on UDP 9101/9103 for %s — is Home Assistant "
+            "on the same network (L2) as the host?",
+            host,
+        )
     # Only a record carrying a valid control port is usable (PROTOCOL.md §1.1).
     for addr, record in proto.results.items():
         try:
@@ -231,6 +240,7 @@ class SavantClient:
         self._stopping = False
         self._authorized = False
         self._post_auth_done = False
+        self._port_warned = False
         self._auth_task: asyncio.Task | None = None
 
         self.on_state_update: _StateCallback | None = None
@@ -248,12 +258,19 @@ class SavantClient:
         return self._authorized
 
     async def run_forever(self) -> None:
-        """Connect and process frames, reconnecting with backoff on any failure."""
+        """Connect and process frames, reconnecting with backoff on any failure.
+
+        The control port is re-discovered before every (re)connect because it changes
+        when the host reboots (PROTOCOL.md §1.1/§3.2); this also self-heals an entry
+        whose port was not found at setup time.
+        """
         delay = self._reconnect_delay
         while not self._stopping:
             try:
-                await self._connect()
-                await self._receive_loop()
+                await self._refresh_discovery()
+                if self._port > 0:
+                    await self._connect()
+                    await self._receive_loop()
             except (TimeoutError, aiohttp.ClientError, OSError, SavantError) as exc:
                 LOGGER.debug("Savant connection lost: %s", exc)
             except Exception:  # noqa: BLE001 - keep the client alive
@@ -262,9 +279,30 @@ class SavantClient:
                 await self._disconnect()
             if self._stopping:
                 break
-            LOGGER.info("Reconnecting to Savant host in %.0fs", delay)
+            LOGGER.debug("Reconnecting to Savant host in %.0fs", delay)
             await asyncio.sleep(delay)
             delay = min(delay * 2, self._reconnect_max_delay)
+
+    async def _refresh_discovery(self) -> None:
+        try:
+            info = await discover_host(self._host, timeout=3.0)
+        except (TimeoutError, OSError):
+            return
+        if info is None:
+            if not self._port_warned:
+                LOGGER.warning(
+                    "Savant control port unknown for %s (UDP discovery found nothing); "
+                    "will keep retrying",
+                    self._host,
+                )
+                self._port_warned = True
+            return
+        self._port_warned = False
+        if info.port != self._port:
+            LOGGER.info("Savant control port changed %s -> %s", self._port, info.port)
+        self._port = info.port
+        if info.home_id:
+            self._home_id = info.home_id
 
     async def stop(self) -> None:
         self._stopping = True

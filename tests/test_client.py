@@ -8,6 +8,7 @@ import gzip
 import msgpack
 import pytest
 
+from custom_components.savant_ha import savant_client as sc
 from custom_components.savant_ha.const import (
     ENVELOPE_KEY_MESSAGES,
     ENVELOPE_KEY_UID,
@@ -251,6 +252,29 @@ def test_auth_response_emits_start_zone():
     )
     assert client.authorized is True
     assert seen == [{"Living Room"}]
+
+
+def test_refresh_discovery_updates_port(monkeypatch):
+    client = SavantClient("10.0.0.5", 0)
+
+    async def fake_discover(host, timeout):
+        return SavantHostInfo(host=host, port=35299, home_id="home-1")
+
+    monkeypatch.setattr(sc, "discover_host", fake_discover)
+    asyncio.run(client._refresh_discovery())
+    assert client._port == 35299
+    assert client._home_id == "home-1"
+
+
+def test_refresh_discovery_keeps_zero_port(monkeypatch):
+    client = SavantClient("10.0.0.5", 0)
+
+    async def fake_discover(host, timeout):
+        return None
+
+    monkeypatch.setattr(sc, "discover_host", fake_discover)
+    asyncio.run(client._refresh_discovery())
+    assert client._port == 0
 
 
 if __name__ == "__main__":
