@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import COLOR_MODE_ONOFF, ColorMode, LightEntity
+from homeassistant.components.light import ColorMode, LightEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -43,7 +43,7 @@ def _discovered_rooms(hub: SavantHub) -> set[str]:
 class SavantLight(SavantEntity, LightEntity):
     """Room-level lighting (on/off; brightness attribute read-only)."""
 
-    _attr_supported_color_modes = {COLOR_MODE_ONOFF}
+    _attr_supported_color_modes = {ColorMode.ONOFF}
 
     def __init__(self, hub: SavantHub, room: str) -> None:
         super().__init__(hub)

@@ -8,18 +8,6 @@
           "host": "Host address",
           "port": "Port (optional)"
         }
-      },
-      "advanced": {
-        "title": "Advanced options",
-        "description": "Host {host}, port {port}. Credentials and room names are optional; leave blank if unsure.",
-        "data": {
-          "username": "Local username",
-          "password": "Local password",
-          "cloud_token": "Cloud token",
-          "configuration_id": "Configuration ID",
-          "host_token": "Host token",
-          "rooms": "Room names (comma or newline separated)"
-        }
       }
     },
     "error": {
@@ -27,6 +15,22 @@
     },
     "abort": {
       "already_configured": "This host is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Savant advanced options",
+        "description": "These are optional and only needed for special setups. Leave blank if unsure.",
+        "data": {
+          "username": "Local username",
+          "password": "Local password",
+          "host_token": "Host token",
+          "cloud_token": "Cloud token",
+          "configuration_id": "Configuration ID",
+          "rooms": "Room names (comma or newline separated)"
+        }
+      }
     }
   }
 }

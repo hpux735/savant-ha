@@ -1,8 +1,13 @@
 """Config flow for the Savant integration.
 
-Two steps: (1) host address + optional explicit port, (2) optional advanced credentials
-and room names.  When no port is supplied, the flow attempts UDP discovery (PROTOCOL.md
-§1.1) to resolve the control port and ``homeId`` before proceeding.
+The primary flow is a single step: enter the host address (and, optionally, an explicit
+control port).  The control port and ``homeId`` are auto-discovered over UDP
+(PROTOCOL.md §1.1) when no port is given.
+
+Advanced settings (credentials and a list of room names) are deliberately *not* asked
+during setup — a new user has no idea what "cloud token" or "host token" mean.  They are
+instead exposed later via the integration's "Configure" button (options flow) for
+power users, and default to sane empty values.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntry, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
@@ -25,7 +31,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from .savant_client import discover_host
+from .savant_client import SavantHostInfo, discover_host
 
 _USER_SCHEMA = vol.Schema(
     {
@@ -38,13 +44,13 @@ _USER_SCHEMA = vol.Schema(
     }
 )
 
-_ADVANCED_SCHEMA = vol.Schema(
+_OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_USERNAME): str,
         vol.Optional(CONF_PASSWORD): str,
+        vol.Optional(CONF_HOST_TOKEN): str,
         vol.Optional(CONF_CLOUD_TOKEN): str,
         vol.Optional(CONF_CONFIGURATION_ID): str,
-        vol.Optional(CONF_HOST_TOKEN): str,
         vol.Optional(CONF_ROOMS): selector.TextSelector(
             selector.TextSelectorConfig(multiline=True)
         ),
@@ -60,45 +66,44 @@ def _parse_rooms(raw: Any) -> list[str]:
 
 
 class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle the two-step config flow."""
+    """Handle a host-only setup."""
 
     VERSION = 1
-
-    def __init__(self) -> None:
-        self._host: str = ""
-        self._port: int | None = None
-        self._discovered: dict[str, Any] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            self._host = user_input[CONF_HOST].strip()
-            self._port = user_input.get(CONF_PORT)
+            host = user_input[CONF_HOST].strip()
+            port = user_input.get(CONF_PORT)
+            name = ""
+            home_id = ""
 
-            if not self._port:
-                try:
-                    info = await discover_host(self._host, timeout=3.0)
-                except Exception:  # noqa: BLE001 - discovery is best-effort
-                    LOGGER.exception("Savant discovery failed")
-                    info = None
-                if info is None or info.port == 0:
-                    errors[CONF_PORT] = "discovery_failed"
-                else:
-                    self._discovered = {
-                        CONF_HOST: info.host,
-                        CONF_PORT: info.port,
-                        CONF_NAME: info.name,
-                        CONF_HOME_ID: info.home_id,
-                    }
+            info = await self._discover(host)
+            if port:
+                # Explicit port: discovery is still consulted (best-effort) to enrich
+                # the entry with the host name / homeId.
+                if info is not None:
+                    name = info.name
+                    home_id = info.home_id
+            elif info is not None and info.port > 0:
+                port = info.port
+                name = info.name
+                home_id = info.home_id
+            else:
+                errors[CONF_PORT] = "discovery_failed"
+
             if not errors:
-                return self.async_show_form(
-                    step_id="advanced",
-                    data_schema=_ADVANCED_SCHEMA,
-                    description_placeholders={
-                        "host": self._host,
-                        "port": str(self._port or self._discovered.get(CONF_PORT, "?")),
+                await self.async_set_unique_id(f"{host}:{port}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=name or host,
+                    data={
+                        CONF_HOST: host,
+                        CONF_PORT: int(port),
+                        CONF_NAME: name,
+                        CONF_HOME_ID: home_id,
                     },
                 )
 
@@ -106,26 +111,37 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=_USER_SCHEMA, errors=errors
         )
 
-    async def async_step_advanced(
+    async def _discover(self, host: str) -> SavantHostInfo | None:
+        try:
+            return await discover_host(host, timeout=3.0)
+        except Exception:  # noqa: BLE001 - discovery is best-effort
+            LOGGER.exception("Savant discovery failed for %s", host)
+            return None
+
+
+class SavantOptionsFlow(OptionsFlow):
+    """Advanced, optional settings — reached via the Configure button."""
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        self._entry = entry
+
+    async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        if user_input is None:
-            return self.async_show_form(step_id="advanced", data_schema=_ADVANCED_SCHEMA)
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={
+                    CONF_USERNAME: user_input.get(CONF_USERNAME, ""),
+                    CONF_PASSWORD: user_input.get(CONF_PASSWORD, ""),
+                    CONF_HOST_TOKEN: user_input.get(CONF_HOST_TOKEN, ""),
+                    CONF_CLOUD_TOKEN: user_input.get(CONF_CLOUD_TOKEN, ""),
+                    CONF_CONFIGURATION_ID: user_input.get(CONF_CONFIGURATION_ID, ""),
+                    CONF_ROOMS: _parse_rooms(user_input.get(CONF_ROOMS)),
+                },
+            )
+        return self.async_show_form(step_id="init", data_schema=_OPTIONS_SCHEMA)
 
-        data: dict[str, Any] = {
-            CONF_HOST: self._discovered.get(CONF_HOST, self._host),
-            CONF_PORT: self._discovered.get(CONF_PORT, self._port),
-            CONF_NAME: self._discovered.get(CONF_NAME, ""),
-            CONF_HOME_ID: self._discovered.get(CONF_HOME_ID, ""),
-            CONF_USERNAME: user_input.get(CONF_USERNAME, ""),
-            CONF_PASSWORD: user_input.get(CONF_PASSWORD, ""),
-            CONF_CLOUD_TOKEN: user_input.get(CONF_CLOUD_TOKEN, ""),
-            CONF_CONFIGURATION_ID: user_input.get(CONF_CONFIGURATION_ID, ""),
-            CONF_HOST_TOKEN: user_input.get(CONF_HOST_TOKEN, ""),
-            CONF_ROOMS: _parse_rooms(user_input.get(CONF_ROOMS)),
-        }
-        await self.async_set_unique_id(f"{data[CONF_HOST]}:{data[CONF_PORT]}")
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title=data.get(CONF_NAME) or data[CONF_HOST], data=data
-        )
+
+async def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+    return SavantOptionsFlow(config_entry)

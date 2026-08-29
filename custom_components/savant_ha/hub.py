@@ -60,6 +60,7 @@ class SavantHub:
         self._task: asyncio.Task | None = None
 
         data = dict(entry.data)
+        options = dict(entry.options or {})
         self.uid = data.get("uid") or uuid.uuid4().hex
 
         self.client = SavantClient(
@@ -67,12 +68,12 @@ class SavantHub:
             port=int(data.get(CONF_PORT) or 0),
             uid=self.uid,
             home_id=data.get(CONF_HOME_ID, ""),
-            cloud_token=data.get(CONF_CLOUD_TOKEN, ""),
-            configuration_id=data.get(CONF_CONFIGURATION_ID, ""),
-            host_token=data.get(CONF_HOST_TOKEN),
-            username=data.get(CONF_USERNAME, ""),
-            password=data.get(CONF_PASSWORD, ""),
-            subscribe_keys=build_default_subscribe_keys(data.get(CONF_ROOMS) or []),
+            cloud_token=options.get(CONF_CLOUD_TOKEN, ""),
+            configuration_id=options.get(CONF_CONFIGURATION_ID, ""),
+            host_token=options.get(CONF_HOST_TOKEN) or None,
+            username=options.get(CONF_USERNAME, ""),
+            password=options.get(CONF_PASSWORD, ""),
+            subscribe_keys=build_default_subscribe_keys(options.get(CONF_ROOMS) or []),
         )
         self.client.on_state_update = self._on_state_update
         self.client.on_status = self._on_status

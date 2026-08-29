@@ -33,6 +33,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Ensure a stable client identity is persisted with the entry (PROTOCOL.md §2:
     # ``uid`` is constant per install).
@@ -52,6 +56,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, hub.stop)
     )
+    # Re-read the advanced options (credentials/rooms) when they change.
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 

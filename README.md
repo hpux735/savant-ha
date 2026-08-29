@@ -41,12 +41,15 @@ git clone https://git.housedillon.com/wdillon/savant-ha2.git savant_ha
 
 Settings → Devices & Services → **Add Integration** → **Savant**.
 
-1. Enter the host address; leave the port blank to auto-discover it.
-2. Optional advanced fields (credentials, `hostToken`/`cloudToken`/`configurationID`,
-   and a list of room names) are on the second step. Room names are install-specific and
-   cannot be enumerated over the protocol, so list them (comma- or newline-separated) if
-   you want room lights/temperature — otherwise only HVAC, audio zones, and global
-   sensors appear.
+1. Enter the host address. Leave the port blank to auto-discover it (recommended); the
+   integration resolves the dynamic control port and `homeId` via a UDP broadcast.
+2. Done — no credentials are required at setup.
+
+Optional advanced settings (local username/password, `hostToken`, `cloudToken`,
+`configurationID`, and a list of room names) are available afterwards via the
+integration's **Configure** button. Room names are install-specific and cannot be
+enumerated over the protocol, so list them (comma- or newline-separated) if you want
+room lights/temperature — otherwise only HVAC, audio zones, and global sensors appear.
 
 ## Entities
 

@@ -155,13 +155,21 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
     finally:
         transport.close()
 
-    # Prefer a record carrying a control port; fall back to any presence record.
+    LOGGER.debug(
+        "Savant discovery: %d raw reply(ies) for %s: %s",
+        len(proto.results),
+        host,
+        {addr: {k: v for k, v in rec.items() if k not in ("UID", "onboardKey")}
+         for addr, rec in proto.results.items()},
+    )
+    # Only a record carrying a valid control port is usable (PROTOCOL.md §1.1).
     for addr, record in proto.results.items():
-        if "port" in record:
+        try:
+            port = int(record.get("port", 0))
+        except (TypeError, ValueError):
+            continue
+        if port > 0:
             return SavantHostInfo.from_record(addr, record)
-    for _, record in proto.results.items():
-        if "homeId" in record or "name" in record:
-            return SavantHostInfo.from_record(host, record)
     return None
 
 
