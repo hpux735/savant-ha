@@ -60,14 +60,14 @@ client                            host
                                       app,model,OS,type,name}, messageFormat:2}
                                       (cloud path adds cloudToken + configurationID;
                                       a local-only session omits both)
+  <-- deviceRecognized -----------   host identity + feature catalog + the flag
+                                      authentication:true/false (§3.0)
   authenticationRequest ---------->   one of two forms:
-      {hostToken}                       cached/cloud credential
-      {user, password}                  LOCAL LOGIN — host account (§4.1)
-  <-- authenticationResponse -------   local:  {authorized, hostToken, secretKey,
-                                      startZone}
-                                       cloud:  {authorized, permissions{admin,remote,
-                                      notifications, blacklists}, configurationHash,
-                                      configurationUID}
+      {user, password}                  LOCAL LOGIN — host account (§3.1)
+      {hostToken}                       cached credential (re-auth)
+  <-- authenticationResponse -------   success: {authorized:true, hostToken, secretKey,
+                                      startZone?}
+                                       failure: {authorized:false, errorReason, errorCode}
   state/register [keys...] -------->   subscribe
   dis/<svc>/register ... ---------->
   <-- state/update / dis/<svc>/update  async pushes
@@ -75,29 +75,58 @@ client                            host
   ping "E" <-> pong "E" (2s) -      keepalive
 ```
 
+### 3.0 `session/deviceRecognized` (host → client)
+
+The host's answer to `devicePresent`, sent **before** any authentication. Its
+`authentication` field (bool) tells the client whether it must send
+`authenticationRequest`: `true` means a login is mandatory before any state
+subscription or `service/request` works. Other fields: `users` (list of local accounts),
+`homeId`/`hostUID`/`hostName`, `homeInfo`, `hostSecret`, `hostTime`/`hostTimeZone`,
+`featureLevel`/`buildNumber`/`buildVersion`/`channel`/`cloudEnvironment`/
+`configurationStatus`/`protocolVersion`/`remote`/`update`, and `featureSummary`
+(a feature/license catalog).
+
 ### 3.1 Local login (`{user, password}`) — cloud-free auth
 
 The `hostToken` is **not** obtained out-of-band: a host-local account authenticates
-directly (PROTOCOL.md §4.1/§4.9 of the sibling repo). Observed live:
+directly, and the host issues the token (PROTOCOL.md §4.0/§4.1 of the sibling repo).
+Live-verified:
 
 ```
+-> session/devicePresent          {protocolVersion:"4", homeId:<any>, device:{UID:<any>,…},
+                                  messageFormat:2}   // homeId/UID not validated; no cloud
+<- session/deviceRecognized       {authentication:true, authorized:false, users:[…], …}
+
 -> session/authenticationRequest  {user:"<LOCAL_USER>", password:"<PASSWORD>"}
 <- session/authenticationResponse {authorized:true,
+                                   hostToken:"<b64 UUID>",   // issued; cache for re-auth
                                    secretKey:"<b64 UUID>",   // purpose unknown
-                                   hostToken:"<b64 UUID>",   // fresh, issued per login
-                                   startZone:"<room>"}
+                                   startZone:"<room>"}       // OPTIONAL
 ```
 
-So a headless integration can log in with only local credentials — no `cloudToken` /
-`configurationID` required (that session's `devicePresent` carried neither).
+Failure (bad password):
+
+```
+<- session/authenticationResponse {authorized:false, errorReason:"Invalid password",
+                                  errorCode:1}
+```
+
+Notes for implementers:
+- `devicePresent` **must** be sent first; the host answers `deviceRecognized` and only
+  then accepts `authenticationRequest`.
+- The password is the literal local-account password (no client-side hashing).
+- `hostToken`/`secretKey` are base64 of UUID-format strings; re-presenting `hostToken`
+  on reconnect skips the password.
+- `authenticationResponse.permissions` appears only on the cloud path, not local login.
 
 ## 4. Endpoints used by this integration
 
 | URI | Direction | Purpose |
 |---|---|---|
 | `session/devicePresent` | client → host | register device |
-| `session/authenticationRequest` | client → host | present `hostToken` **or** `{user, password}` |
-| `session/authenticationResponse` | host → client | auth result (`authorized`, `hostToken`, `secretKey`, `startZone`) |
+| `session/deviceRecognized` | host → client | host identity + `authentication` flag |
+| `session/authenticationRequest` | client → host | present `{user, password}` **or** `{hostToken}` |
+| `session/authenticationResponse` | host → client | auth result (`authorized` + `errorReason`/`errorCode` on failure) |
 | `state/register` / `state/unregister` | client → host | subscribe/unsubscribe state keys |
 | `state/update` | host → client | `{state, value}` pushes |
 | `service/request` | client → host | **device control** (§6) |

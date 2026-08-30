@@ -55,6 +55,7 @@ ENVELOPE_KEY_USER = "user"
 
 # ---- Session endpoints (PROTOCOL.md §3 / §4) ------------------------------
 URI_DEVICE_PRESENT = "session/devicePresent"
+URI_DEVICE_RECOGNIZED = "session/deviceRecognized"
 URI_AUTH_REQUEST = "session/authenticationRequest"
 URI_AUTH_RESPONSE = "session/authenticationResponse"
 URI_STATE_REGISTER = "state/register"
@@ -243,10 +244,10 @@ def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
 
 
 # ---- Defaults --------------------------------------------------------------
-# Default/identity values sent in devicePresent until the user supplies real ones.
-# ASSUMPTION: a well-behaved client must identify itself; the exact value of the make/
-# app/model strings is unconstrained (only the host's own app has been observed).
+# Identity values sent in devicePresent (PROTOCOL.md §4.0/§4.1 of the sibling repo).
+# The host does NOT validate homeId/device.UID for a local login, and no cloudToken/
+# configurationID is required — a freshly generated identity is accepted.  ``UID`` is
+# a freshly generated per-install UUID.
 DEVICE_MAKE = "Home Assistant"
 DEVICE_APP = "savant_ha"
 DEVICE_TYPE = "Home Assistant"
-# client device UUID is generated per config entry at setup time.

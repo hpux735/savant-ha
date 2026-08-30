@@ -56,6 +56,7 @@ from .const import (
     URI_DASHBOARD_REQUEST,
     URI_DASHBOARD_UPDATE,
     URI_DEVICE_PRESENT,
+    URI_DEVICE_RECOGNIZED,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
@@ -375,6 +376,8 @@ class SavantClient:
         self._stopping = False
         self._authorized = False
         self._auth_response_seen = False
+        self._device_recognized = False
+        self._authentication_required = True
         self._post_auth_done = False
         self._port_warned = False
         self._auth_task: asyncio.Task | None = None
@@ -518,18 +521,17 @@ class SavantClient:
         self._connected = True
         self._authorized = False
         self._auth_response_seen = False
+        self._device_recognized = False
+        self._authentication_required = True
         self._post_auth_done = False
         if self.on_status is not None:
             self.on_status(True)
-        # Session handshake (PROTOCOL.md §3).  State registration follows the auth
-        # response on the credentialed path (§3 flow), so it is deferred to
-        # ``_post_auth``.
+        # Session handshake (PROTOCOL.md §4.0/§4.1): devicePresent MUST be sent first;
+        # the host answers deviceRecognized (carrying the `authentication` flag) and only
+        # then accepts authenticationRequest.  The auth flow is therefore deferred to
+        # ``_run_auth_flow``, which waits for deviceRecognized before sending credentials.
         await self._send_device_present()
-        await self._send_auth_request()
-        if self._has_credentials:
-            self._auth_task = asyncio.ensure_future(self._wait_and_post_auth())
-        else:
-            await self._post_auth()
+        self._auth_task = asyncio.ensure_future(self._run_auth_flow())
 
     async def _send_device_present(self) -> None:
         # A local-only session omits cloudToken/configurationID (PROTOCOL.md §4.9) —
@@ -555,7 +557,7 @@ class SavantClient:
         await self.request(URI_DEVICE_PRESENT, [message])
 
     async def _send_auth_request(self) -> None:
-        # One of two observed forms (PROTOCOL.md §4): a cached/cloud hostToken, or the
+        # One of two observed forms (PROTOCOL.md §4.1): a cached hostToken, or the
         # local-login form {user, password}.
         if self._host_token:
             await self.request(URI_AUTH_REQUEST, [{"hostToken": self._host_token}])
@@ -565,11 +567,25 @@ class SavantClient:
                 [{"user": self._username, "password": self._password}],
             )
 
-    async def _wait_and_post_auth(self) -> None:
+    async def _run_auth_flow(self) -> None:
+        # PROTOCOL.md §4.0/§4.1: devicePresent -> (host) deviceRecognized ->
+        # authenticationRequest (only if the `authentication` flag is set) ->
+        # authenticationResponse -> state/dashboard registration.
         try:
             deadline = time.monotonic() + AUTH_TIMEOUT
-            while not self._authorized and time.monotonic() < deadline:
-                await asyncio.sleep(0.2)
+            while not self._device_recognized and time.monotonic() < deadline:
+                await asyncio.sleep(0.1)
+            if not self._device_recognized:
+                LOGGER.warning(
+                    "Savant: host did not answer devicePresent (no deviceRecognized)"
+                )
+            if self._authentication_required:
+                await self._send_auth_request()
+                deadline = time.monotonic() + AUTH_TIMEOUT
+                while not self._auth_response_seen and time.monotonic() < deadline:
+                    await asyncio.sleep(0.1)
+                if not self._auth_response_seen:
+                    LOGGER.warning("Savant: host did not answer authenticationRequest")
             await self._post_auth()
         except (SavantError, aiohttp.ClientError, OSError, TimeoutError):
             pass
@@ -687,12 +703,25 @@ class SavantClient:
                     state = message.get("state")
                     if isinstance(state, str) and self.on_state_update is not None:
                         self.on_state_update(state, message.get("value"))
+        elif uri == URI_DEVICE_RECOGNIZED:
+            self._handle_device_recognized(messages)
         elif uri == URI_AUTH_RESPONSE:
             self._handle_auth_response(messages)
         elif uri in (URI_DASHBOARD_UPDATE, URI_DASHBOARD_REQUEST):
             self._emit_rooms(rooms_from_scene_messages(messages))
         else:
             LOGGER.debug("Unhandled Savant URI %r", uri)
+
+    def _handle_device_recognized(self, messages: list[Any]) -> None:
+        # Host's answer to devicePresent (PROTOCOL.md §4.0): carries the
+        # `authentication` flag (true => the client must log in) and host metadata.
+        self._device_recognized = True
+        first = messages[0] if messages and isinstance(messages[0], dict) else {}
+        self._authentication_required = bool(first.get("authentication", True))
+        LOGGER.info(
+            "Savant deviceRecognized (authentication=%s)",
+            self._authentication_required,
+        )
 
     def _handle_auth_response(self, messages: list[Any]) -> None:
         self._auth_response_seen = True
@@ -701,8 +730,10 @@ class SavantClient:
         if self._authorized:
             LOGGER.info("Savant login successful")
         else:
-            LOGGER.warning("Savant login denied — check the host-local username/password")
-        # startZone names the room the session opens in (PROTOCOL.md §4.1/§6.1).
+            reason = first.get("errorReason") or first.get("errorCode")
+            LOGGER.warning("Savant login denied: %s", reason or "unknown reason")
+        # startZone names the room the session opens in (PROTOCOL.md §4.1/§6.1); it is
+        # optional and may be absent.
         start_zone = first.get("startZone")
         if isinstance(start_zone, str) and start_zone:
             self._emit_rooms({start_zone})

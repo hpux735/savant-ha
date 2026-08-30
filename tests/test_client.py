@@ -255,6 +255,37 @@ def test_auth_response_emits_start_zone():
     assert seen == [{"Living Room"}]
 
 
+def test_device_recognized_sets_authentication_flag():
+    client = SavantClient("10.0.0.5", 12345)
+    assert client._device_recognized is False
+    client._handle_frame(
+        _frame(
+            {
+                ENVELOPE_KEY_URI: "session/deviceRecognized",
+                ENVELOPE_KEY_MESSAGES: [{"authentication": True}],
+            }
+        )
+    )
+    assert client._device_recognized is True
+    assert client._authentication_required is True
+
+
+def test_auth_denied_marks_seen_but_not_authorized():
+    client = SavantClient("10.0.0.5", 12345)
+    client._handle_frame(
+        _frame(
+            {
+                ENVELOPE_KEY_URI: "session/authenticationResponse",
+                ENVELOPE_KEY_MESSAGES: [
+                    {"authorized": False, "errorReason": "Invalid password", "errorCode": 1}
+                ],
+            }
+        )
+    )
+    assert client.authorized is False
+    assert client.auth_response_seen is True
+
+
 def test_refresh_discovery_updates_port(monkeypatch):
     client = SavantClient("10.0.0.5", 0)
 
