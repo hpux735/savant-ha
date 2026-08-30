@@ -308,5 +308,30 @@ def test_probe_host_collects_device_surface(monkeypatch):
     assert info.zones == {1}
 
 
+def test_probe_host_survives_cancelling_a_blocked_receive(monkeypatch):
+    # Regression: cancelling the receive task raises asyncio.CancelledError, which is a
+    # BaseException.  The probe must suppress it or the config flow crashes with HA's
+    # generic "Unknown error occurred".
+    release = asyncio.Event()
+
+    async def fake_connect(self):
+        self._authorized = True
+
+    async def fake_receive_loop(self):
+        await release.wait()
+
+    async def fake_disconnect(self):
+        pass
+
+    monkeypatch.setattr(sc.SavantClient, "_connect", fake_connect)
+    monkeypatch.setattr(sc.SavantClient, "_receive_loop", fake_receive_loop)
+    monkeypatch.setattr(sc.SavantClient, "_disconnect", fake_disconnect)
+
+    info = asyncio.run(
+        probe_host("10.0.0.5", 12345, username="u", password="p", timeout=0.05)
+    )
+    assert info.authorized is True
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

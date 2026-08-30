@@ -192,7 +192,9 @@ async def probe_host(
         await asyncio.sleep(timeout)
     finally:
         receive.cancel()
-        with suppress(Exception):
+        # NOTE: asyncio.CancelledError is a BaseException (not Exception), so it must
+        # be suppressed explicitly or it escapes and crashes the config flow.
+        with suppress(asyncio.CancelledError, Exception):
             await receive
         await client._disconnect()
     info.authorized = client.authorized
@@ -581,7 +583,8 @@ class SavantClient:
         self._authorized = False
         if self._auth_task is not None:
             self._auth_task.cancel()
-            with suppress(Exception):
+            # CancelledError is a BaseException — suppress it explicitly too.
+            with suppress(asyncio.CancelledError, Exception):
                 await self._auth_task
             self._auth_task = None
         ws, self._ws = self._ws, None
@@ -615,7 +618,8 @@ class SavantClient:
                     break
         finally:
             keepalive.cancel()
-            with suppress(Exception):
+            # CancelledError is a BaseException — suppress it explicitly too.
+            with suppress(asyncio.CancelledError, Exception):
                 await keepalive
 
     async def _keepalive(self) -> None:

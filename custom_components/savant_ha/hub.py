@@ -103,7 +103,8 @@ class SavantHub:
         await self.client.stop()
         if self._task is not None:
             self._task.cancel()
-            with suppress(Exception):
+            # CancelledError is a BaseException — suppress it explicitly too.
+            with suppress(asyncio.CancelledError, Exception):
                 await self._task
             self._task = None
 
