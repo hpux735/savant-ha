@@ -192,7 +192,9 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if probe is None:
                 errors["base"] = "cannot_connect"
             elif not probe.authorized:
-                errors["base"] = "invalid_auth"
+                errors["base"] = (
+                    "invalid_auth" if probe.auth_response_seen else "no_auth_response"
+                )
             else:
                 self._devices = _devices_from_info(probe)
                 if not self._devices:

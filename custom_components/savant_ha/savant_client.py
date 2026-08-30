@@ -69,6 +69,30 @@ _RoomsCallback = Callable[[set[str]], None]
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
 
+# Message keys that must never be written to logs (PII per AGENTS.md).
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "hostToken",
+        "secretKey",
+        "cloudToken",
+        "configurationID",
+        "homeId",
+        "onboardKey",
+        "userHostName",
+        "UID",
+    }
+)
+
+
+def _redact(obj: Any) -> Any:
+    """Return a log-safe copy of a msgpack-decoded object (PII keys masked)."""
+    if isinstance(obj, dict):
+        return {k: ("<redacted>" if k in _SENSITIVE_KEYS else _redact(v)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_redact(v) for v in obj]
+    return obj
+
 
 class SavantError(Exception):
     """Base error for the Savant client."""
@@ -130,6 +154,7 @@ class SavantDeviceInfo:
     hvac_suffixes: set[str] = field(default_factory=set)
     zones: set[int] = field(default_factory=set)
     authorized: bool = False
+    auth_response_seen: bool = False
 
 
 async def probe_host(
@@ -198,9 +223,11 @@ async def probe_host(
             await receive
         await client._disconnect()
     info.authorized = client.authorized
+    info.auth_response_seen = client.auth_response_seen
     LOGGER.info(
-        "Savant probe: authorized=%s rooms=%d hvac=%d zones=%d",
+        "Savant probe: authorized=%s auth_response=%s rooms=%d hvac=%d zones=%d",
         info.authorized,
+        info.auth_response_seen,
         len(info.rooms),
         len(info.hvac_suffixes),
         len(info.zones),
@@ -347,6 +374,7 @@ class SavantClient:
         self._connected = False
         self._stopping = False
         self._authorized = False
+        self._auth_response_seen = False
         self._post_auth_done = False
         self._port_warned = False
         self._auth_task: asyncio.Task | None = None
@@ -364,6 +392,10 @@ class SavantClient:
     @property
     def authorized(self) -> bool:
         return self._authorized
+
+    @property
+    def auth_response_seen(self) -> bool:
+        return self._auth_response_seen
 
     async def run_forever(self) -> None:
         """Connect and process frames, reconnecting with backoff on any failure.
@@ -428,6 +460,7 @@ class SavantClient:
             ENVELOPE_KEY_UID: self._uid,
             ENVELOPE_KEY_USER: DEVICE_TYPE,
         }
+        LOGGER.debug("Savant -> %s %s", uri, _redact(messages))
         await self._ws.send_bytes(_pack(envelope))
 
     async def service_request(
@@ -476,8 +509,15 @@ class SavantClient:
             protocols=[RPM_SUBPROTOCOL],
             receive_timeout=15.0,
         )
+        LOGGER.info(
+            "Savant WS connected to %s:%s (subprotocol=%s)",
+            self._host,
+            self._port,
+            self._ws.protocol,
+        )
         self._connected = True
         self._authorized = False
+        self._auth_response_seen = False
         self._post_auth_done = False
         if self.on_status is not None:
             self.on_status(True)
@@ -635,9 +675,11 @@ class SavantClient:
         payload = gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
         obj = msgpack.unpackb(payload, raw=False)
         if not isinstance(obj, dict):
+            LOGGER.warning("Savant <- undecodable frame: %r", _redact(obj))
             return
         uri = obj.get(ENVELOPE_KEY_URI, "")
         messages = obj.get(ENVELOPE_KEY_MESSAGES, []) or []
+        LOGGER.debug("Savant <- %s %s", uri, _redact(messages))
 
         if uri == URI_STATE_UPDATE:
             for message in messages:
@@ -653,6 +695,7 @@ class SavantClient:
             LOGGER.debug("Unhandled Savant URI %r", uri)
 
     def _handle_auth_response(self, messages: list[Any]) -> None:
+        self._auth_response_seen = True
         first = messages[0] if messages and isinstance(messages[0], dict) else {}
         self._authorized = bool(first.get("authorized", False))
         if self._authorized:

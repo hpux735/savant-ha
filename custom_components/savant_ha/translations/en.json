@@ -29,6 +29,7 @@
     "error": {
       "discovery_failed": "Could not discover the host's control port. Provide an explicit port.",
       "invalid_auth": "Login failed — check the host-local username and password.",
+      "no_auth_response": "The host did not respond to the login request. The host may only accept local login from the Savant app (see PROTOCOL.md §4.6).",
       "cannot_connect": "Could not connect to the host on the discovered port.",
       "no_devices": "Connected and authenticated, but no rooms or devices were reported by the host."
     },
