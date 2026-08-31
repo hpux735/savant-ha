@@ -156,7 +156,24 @@ Notes for implementers:
 Per-room attributes: `ActiveService`, `ActiveServices`, `LastActiveService`,
 `CurrentVolume(int)`, `IsMuted(bool)`, `RelativeVolumeOnly(bool)`, `RoomLightsAreOn(bool)`,
 `BrightnessLevel(int 0-100)`, `RoomFansAreOn(bool)`, `RoomShadesAreOpen(bool)`,
-`RoomCurrentTemperature(num)`, `SleepTimerActive(bool)`, `SleepTimerRemainingTime(num)`.
+`RoomCurrentTemperature(string, e.g. "72")`, `SleepTimerActive(bool)`,
+`SleepTimerRemainingTime(num)`.
+
+**Value formats (live-verified against the app capture):** `RoomLightsAreOn` is a bool;
+`BrightnessLevel` is an int 0–100; `RoomCurrentTemperature` is a **string** (not a
+number). Per-load lighting keys (from the archive `stateName`) are
+`<component>.<logical>.CurrentDimmerLevel_N_<addr>` (int 0–100) and
+`<component>.<logical>.CurrentColor_N_<addr>` / `CurrentBleColor_N_<addr>` — a string of
+the form `"R,G,B,W,<level>,<level>|kelvin,<level>,<level>|<curve>"` (e.g.
+`"083,079,245,000,096,096|6000,096,096|Custom 1"`).
+
+**State push behaviour varies by host/build.** `state/register` takes a list of
+single-key maps (`messages:[{"state":k}, …]`, ~70 keys in one frame) and the host
+pushes `state/update` `{state,value}` on change (with an immediate snapshot per key on
+register). On the reference app capture the host confirms every light change; on this
+integration's target host (SVR-5200s / build 11.2.1) the host answers `state/update []`
+(empty) and pushes nothing, so lighting entities additionally apply **optimistic** local
+state on command.
 
 **Deriving the room list (no dedicated "get rooms" endpoint).** Room names are arbitrary
 host-defined strings; the full set is inferred from (PROTOCOL.md §6.1 of the sibling):

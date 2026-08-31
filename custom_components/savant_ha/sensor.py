@@ -23,6 +23,7 @@ from .const import (
     GLOBAL_CURRENT_TEMPERATURE,
     ROOM_CURRENT_TEMPERATURE,
 )
+from .control import coerce_number
 from .entity import SavantEntity
 from .hub import SavantHub
 
@@ -51,10 +52,8 @@ class SavantSensor(SavantEntity, SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        value = self.hub.get(self._key)
-        if isinstance(value, (int, float)):
-            return float(value)
-        return None
+        # Room/global temperatures arrive as strings on the wire ("72"), not numbers.
+        return coerce_number(self.hub.get(self._key))
 
 
 def _build_entities(hub: SavantHub) -> list[SavantSensor]:

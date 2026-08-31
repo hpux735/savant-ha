@@ -8,8 +8,6 @@ is offered only when the zone's active room can be resolved via ``ZonesActiveIn`
 
 from __future__ import annotations
 
-import re
-
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -28,6 +26,7 @@ from .const import (
     VERB_POWER_ON,
     VERB_SET_VOLUME,
 )
+from .control import audio_zone_logical_component, zone_state_prefix
 from .entity import SavantEntity
 from .hub import SavantHub
 
@@ -38,14 +37,10 @@ _ALBUM = "CurrentAlbumName"
 _SERVICE = "CurrentStreamingService"
 
 
-def _zone_prefix(component: str, logical_component: str) -> str:
-    return f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
-
-
 def _active_rooms(hub: SavantHub, component: str, logical_component: str) -> list[str]:
     # ZonesActiveIn maps zone -> room (§6.2); the exact shape is unconfirmed, so both a
     # mapping (values) and a list are accepted defensively.
-    value = hub.get(f"{_zone_prefix(component, logical_component)}{_ZONE_MARKER}")
+    value = hub.get(f"{zone_state_prefix(component, logical_component)}{_ZONE_MARKER}")
     if isinstance(value, dict):
         return [r for r in value.values() if isinstance(r, str)]
     if isinstance(value, list):
@@ -75,7 +70,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
 
     def _key(self, attr: str) -> str:
-        return f"{_zone_prefix(self._component, self._logical_component)}{attr}"
+        return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
 
     def _active_rooms(self) -> list[str]:
         return _active_rooms(self.hub, self._component, self._logical_component)
@@ -164,14 +159,7 @@ def _discovered_zones(hub: SavantHub) -> set[int]:
 
 
 def _logical_component(device: dict[str, object]) -> str | None:
-    zone = str(device.get("zone") or "")
-    if zone.startswith("Audio Zone "):
-        return zone
-    for field in (str(device.get("name") or ""),):
-        match = re.search(r"Audio Zone\s+(\d+)", field)
-        if match:
-            return f"Audio Zone {match.group(1)}"
-    return None
+    return audio_zone_logical_component(device)
 
 
 def _build_entities(hub: SavantHub) -> list[SavantMediaPlayer]:

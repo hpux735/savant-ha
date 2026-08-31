@@ -23,7 +23,6 @@ from .const import (
     DEVICE_TYPE_CLIMATE,
     DOMAIN,
     HVAC_STATE_PREFIX,
-    SVC_ENV_HVAC,
     VERB_FAN_MODE_AUTO,
     VERB_FAN_MODE_CYCLE,
     VERB_FAN_MODE_ON,
@@ -34,6 +33,7 @@ from .const import (
     VERB_SET_COOL_POINT,
     VERB_SET_HEAT_POINT,
 )
+from .control import climate_identity, climate_scope, thermostat_args
 from .entity import SavantEntity
 from .hub import SavantHub
 
@@ -72,11 +72,6 @@ _FAN_MODE_VERBS = {
 }
 
 
-def _suffix_address(suffix: str) -> str:
-    # ``_1`` -> ``"1"`` (PROTOCOL.md §6: ThermostatAddress is a string index).
-    return suffix.lstrip("_")
-
-
 class SavantClimate(SavantEntity, ClimateEntity):
     """A single HVAC controller (unit index)."""
 
@@ -102,21 +97,13 @@ class SavantClimate(SavantEntity, ClimateEntity):
             device_name=device["name"],
             area=device.get("area", ""),
         )
-        state_name = device.get("state_name", "")
-        marker = _TEMP_ATTR
-        if marker in state_name:
-            self._state_prefix, self._suffix = state_name.split(marker, 1)
-        else:
-            self._state_prefix = HVAC_STATE_PREFIX
-            self._suffix = suffix
-        parts = self._state_prefix.rstrip(".").split(".")
-        self._component = parts[0] if len(parts) >= 2 else "HVAC Controller"
-        self._logical_component = parts[1] if len(parts) >= 2 else "HVAC_controller"
-        addresses = str(device.get("addresses") or "").split(",")
-        self._thermostat_address = addresses[0].strip() or _suffix_address(self._suffix)
-        self._thermostat_address_2 = (
-            addresses[1].strip() if len(addresses) > 1 and addresses[1].strip() else "(null)"
-        )
+        self._addresses = device.get("addresses", "")
+        (
+            self._state_prefix,
+            self._suffix,
+            self._component,
+            self._logical_component,
+        ) = climate_identity(device.get("state_name", ""), suffix)
         self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
 
     # ------------------------------------------------------------ state keys
@@ -125,19 +112,10 @@ class SavantClimate(SavantEntity, ClimateEntity):
         return f"{self._state_prefix}{attr}{self._suffix}"
 
     def _scope(self) -> dict[str, str]:
-        return {
-            "component": self._component,
-            "service_type": SVC_ENV_HVAC,
-            "zone": "",
-            "logical_component": self._logical_component,
-            "variant_id": "1",
-        }
+        return climate_scope(self._component, self._logical_component)
 
     def _thermostat_args(self) -> dict[str, Any]:
-        return {
-            "ThermostatAddress": self._thermostat_address,
-            "ThermostatAddress2": self._thermostat_address_2,
-        }
+        return thermostat_args(self._addresses, self._suffix)
 
     def _num(self, attr: str) -> float | None:
         value = self._state(self._key(attr))

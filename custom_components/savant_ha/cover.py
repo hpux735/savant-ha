@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_TYPE_COVER, DOMAIN, SVC_ENV_SHADE
+from .control import shade_address_args, shade_component_logical
 from .entity import SavantEntity
 from .hub import SavantHub
 
@@ -36,11 +37,8 @@ class SavantCover(SavantEntity, CoverEntity):
         )
         self._room = device.get("room", "")
         self._state_name = str(device.get("state_name") or "")
-        self._addresses = [part.strip() or "(null)" for part in str(device.get("addresses") or "").split(",")]
-        prefix = self._state_name.rsplit(".", 1)[0] if "." in self._state_name else ""
-        parts = prefix.split(".")
-        self._component = parts[0] if len(parts) >= 2 else ""
-        self._logical_component = parts[1] if len(parts) >= 2 else ""
+        self._addresses = str(device.get("addresses") or "")
+        self._component, self._logical_component = shade_component_logical(self._state_name)
         self._attr_unique_id = f"{hub.uid}_cover_{device['id']}"
 
     @property
@@ -52,10 +50,7 @@ class SavantCover(SavantEntity, CoverEntity):
         return None
 
     def _address_args(self, count: int = 5) -> dict[str, str]:
-        return {
-            f"Address{index}": value
-            for index, value in enumerate(self._addresses[:count], start=1)
-        }
+        return shade_address_args(self._addresses, count)
 
     async def _shade_request(self, request: str) -> None:
         await self._service_request(

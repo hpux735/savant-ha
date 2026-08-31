@@ -19,6 +19,7 @@ from custom_components.savant_ha.const import (
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
+    audio_zone_state_keys,
     build_default_subscribe_keys,
     device_state_keys,
     new_uid,
@@ -189,6 +190,19 @@ def test_device_state_keys_uses_archive_state_name_and_hvac_scope():
     assert "New Thermostat.HVAC_controller.ThermostatCurrentCoolPoint_2" in keys
     assert "New Thermostat.HVAC_controller.IsCurrentHVACModeHeat_2" in keys
     assert "New Thermostat.HVAC_controller.ThermostatCurrentRemoteTemperature_2" in keys
+
+
+def test_device_state_keys_passthrough_for_non_climate():
+    assert device_state_keys(
+        {"type": "cover", "state_name": "Bond Bridge.Lighting_controller.ShadeLevel_abc"}
+    ) == ["Bond Bridge.Lighting_controller.ShadeLevel_abc"]
+    assert device_state_keys({"type": "media_player"}) == []
+
+
+def test_audio_zone_state_keys_keep_component_identity():
+    keys = audio_zone_state_keys("Living Room Sound Bar", "Audio Zone 1")
+    assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" in keys
+    assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.ZonesActiveIn" in keys
 
 
 def test_local_login_uses_user_password_form():
