@@ -30,6 +30,7 @@ import aiohttp
 import msgpack
 from aiohttp import WSMsgType, hdrs
 
+from . import uiconfig
 from .const import (
     DASHBOARD_REQUEST_SCENES,
     DEVICE_APP,
@@ -60,6 +61,7 @@ from .const import (
     URI_DEVICE_PRESENT,
     URI_DEVICE_RECOGNIZED,
     URI_FEATURE_LOCK,
+    URI_FILE_DOWNLOAD,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
@@ -174,10 +176,10 @@ _REDACT_KEYS = frozenset({"UID", "onboardKey", "homeId", "userHostName"})
 
 @dataclass
 class SavantDeviceInfo:
-    """The discoverable device surface collected during setup (PROTOCOL.md §6.1).
+    """The discoverable device surface collected during setup.
 
-    Rooms come from scene definitions / ``startZone``; HVAC units and audio zones from
-    the subscribed state keys.
+    ``devices`` is the authoritative inventory from the ``uiconfig.tar.gz`` download
+    (PROTOCOL.md §13); the room/hvac/zone sets are fallbacks derived from the state bus.
     """
 
     rooms: set[str] = field(default_factory=set)
@@ -185,6 +187,7 @@ class SavantDeviceInfo:
     zones: set[int] = field(default_factory=set)
     authorized: bool = False
     auth_response_seen: bool = False
+    devices: list[uiconfig.SavantDevice] = field(default_factory=list)
 
 
 async def probe_host(
@@ -254,14 +257,21 @@ async def probe_host(
         # Capture the auth state BEFORE _disconnect() resets _authorized.
         info.authorized = client.authorized
         info.auth_response_seen = client.auth_response_seen
+        # Parse the downloaded config archive into the authoritative device inventory.
+        if client.uiconfig_archive:
+            try:
+                info.devices = uiconfig.parse_archive(client.uiconfig_archive)
+            except Exception:  # noqa: BLE001 - archive parsing is best-effort
+                LOGGER.exception("Savant: failed to parse uiconfig archive")
         await client._disconnect()
     LOGGER.info(
-        "Savant probe: authorized=%s auth_response=%s rooms=%d hvac=%d zones=%d",
+        "Savant probe: authorized=%s auth_response=%s rooms=%d hvac=%d zones=%d devices=%d",
         info.authorized,
         info.auth_response_seen,
         len(info.rooms),
         len(info.hvac_suffixes),
         len(info.zones),
+        len(info.devices),
     )
     return info
 
@@ -412,6 +422,10 @@ class SavantClient:
         self._post_auth_done = False
         self._port_warned = False
         self._auth_task: asyncio.Task | None = None
+        # Config-archive download (PROTOCOL.md §13): raw framed binary frames are
+        # accumulated here and reassembled once the final frame arrives.
+        self._uiconfig_frames: list[bytes] = []
+        self._uiconfig_archive: bytes | None = None
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
@@ -430,6 +444,10 @@ class SavantClient:
     @property
     def auth_response_seen(self) -> bool:
         return self._auth_response_seen
+
+    @property
+    def uiconfig_archive(self) -> bytes | None:
+        return self._uiconfig_archive
 
     async def run_forever(self) -> None:
         """Connect and process frames, reconnecting with backoff on any failure.
@@ -629,8 +647,18 @@ class SavantClient:
                 if not self._auth_response_seen:
                     LOGGER.warning("Savant: host did not answer authenticationRequest")
             await self._post_auth()
+            if self._authorized:
+                await self._request_uiconfig()
         except (SavantError, aiohttp.ClientError, OSError, TimeoutError):
             pass
+
+    async def _request_uiconfig(self) -> None:
+        # Download the authoritative config archive (PROTOCOL.md §13).  The response is
+        # streamed as framed binary frames, reassembled by _handle_frame.
+        self._uiconfig_frames = []
+        self._uiconfig_archive = None
+        await self.request(URI_FILE_DOWNLOAD, [{"filePath": "uiconfig.tar.gz"}])
+        LOGGER.debug("Savant -> requested uiconfig.tar.gz")
 
     async def _post_auth(self) -> None:
         if self._post_auth_done:
@@ -739,6 +767,11 @@ class SavantClient:
             await self._ws.ping(KEEPALIVE_BYTE)
 
     def _handle_frame(self, data: bytes) -> None:
+        # The config archive is streamed as framed binary frames (not msgpack) — the
+        # marker byte 0x01 with flag 0x01/0x81 (PROTOCOL.md §13).
+        if data[:1] == b"\x01" and len(data) >= 2 and data[1] in (0x01, 0x81):
+            self._handle_archive_frame(data)
+            return
         # host -> client is gzip-compressed msgpack (PROTOCOL.md §1), except the
         # un-compressed ``featureLock`` map.
         payload = gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
@@ -767,6 +800,17 @@ class SavantClient:
             self._emit_rooms(rooms_from_scene_messages(messages))
         else:
             LOGGER.debug("Unhandled Savant URI %r", uri)
+
+    def _handle_archive_frame(self, data: bytes) -> None:
+        self._uiconfig_frames.append(data)
+        # byte 1 = 0x81 marks the final frame (PROTOCOL.md §13).
+        if data[1] == 0x81:
+            self._uiconfig_archive = uiconfig.reassemble_archive(self._uiconfig_frames)
+            LOGGER.info(
+                "Savant uiconfig downloaded: %d frame(s), %d bytes",
+                len(self._uiconfig_frames),
+                len(self._uiconfig_archive),
+            )
 
     def _handle_device_recognized(self, messages: list[Any]) -> None:
         # Host's answer to devicePresent (PROTOCOL.md §4.0): carries the

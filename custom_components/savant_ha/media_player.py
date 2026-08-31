@@ -8,6 +8,8 @@ zone's active room can be resolved via ``ZonesActiveIn``.
 
 from __future__ import annotations
 
+import re
+
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -18,7 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    DEVICE_TYPE_AUDIO_ZONE,
+    DEVICE_TYPE_MEDIA_PLAYER,
     DOMAIN,
     MUSIC_ZONE_PREFIX,
     ROOM_CURRENT_VOLUME,
@@ -54,16 +56,16 @@ def _active_rooms(hub: SavantHub, zone: int) -> list[str]:
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     """A single Savant audio zone."""
 
-    def __init__(self, hub: SavantHub, zone: int, area: str = "") -> None:
+    def __init__(self, hub: SavantHub, device: dict[str, str], zone: int) -> None:
         super().__init__(
             hub,
-            device_key=f"audio_zone:{zone}",
-            device_name=f"Audio Zone {zone}",
-            area=area,
+            device_key=f"media:{device['id']}",
+            device_name=device["name"],
+            area=device.get("area", ""),
         )
         self._zone = zone
-        self._attr_unique_id = f"{hub.uid}_audio_zone_{zone}"
-        self._attr_name = f"Audio Zone {zone}"
+        self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
+        self._attr_name = device["name"]
 
     def _key(self, attr: str) -> str:
         return f"{_zone_prefix(self._zone)}{attr}"
@@ -154,19 +156,32 @@ def _discovered_zones(hub: SavantHub) -> set[int]:
     return zones
 
 
+def _zone_number(device: dict[str, str]) -> int | None:
+    for field in (device.get("zone", ""), device.get("name", "")):
+        match = re.search(r"Audio Zone\s+(\d+)", field)
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def _build_entities(hub: SavantHub) -> list[SavantMediaPlayer]:
     if hub.devices is not None:
+        media = [d for d in hub.devices if d.get("type") == DEVICE_TYPE_MEDIA_PLAYER]
+        used: set[int] = set()
         entities: list[SavantMediaPlayer] = []
-        for device in hub.devices:
-            if device.get("type") != DEVICE_TYPE_AUDIO_ZONE:
-                continue
-            try:
-                zone = int(device["id"])
-            except (TypeError, ValueError):
-                continue
-            entities.append(SavantMediaPlayer(hub, zone, area=device.get("area", "")))
+        index = 1
+        for device in media:
+            zone = _zone_number(device) or index
+            while zone in used:
+                zone += 1
+            used.add(zone)
+            index += 1
+            entities.append(SavantMediaPlayer(hub, device, zone))
         return entities
-    return [SavantMediaPlayer(hub, zone) for zone in sorted(_discovered_zones(hub))]
+    return [
+        SavantMediaPlayer(hub, {"id": str(z), "name": f"Audio Zone {z}"}, z)
+        for z in sorted(_discovered_zones(hub))
+    ]
 
 
 async def async_setup_entry(

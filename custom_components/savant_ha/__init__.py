@@ -16,6 +16,8 @@ from .hub import SavantHub
 
 PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
+    Platform.COVER,
+    Platform.FAN,
     Platform.LIGHT,
     Platform.MEDIA_PLAYER,
     Platform.SENSOR,

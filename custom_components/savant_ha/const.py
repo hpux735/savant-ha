@@ -43,10 +43,15 @@ CONF_NAME = "name"  # discovered host name
 CONF_ROOMS = "rooms"  # user-supplied room names (list[str])
 CONF_DEVICES = "devices"  # user-approved device list (list[dict]) from the picker step
 
-# Device kinds in the approved device list.
-DEVICE_TYPE_ROOM = "room"
-DEVICE_TYPE_HVAC = "hvac"
-DEVICE_TYPE_AUDIO_ZONE = "audio_zone"
+# Device kinds in the approved device list (mirror HA platform names).  Devices come
+# from the uiconfig.tar.gz config archive (PROTOCOL.md §13); each maps to one HA device
+# with one or more entities.
+DEVICE_TYPE_LIGHT = "light"
+DEVICE_TYPE_CLIMATE = "climate"
+DEVICE_TYPE_COVER = "cover"
+DEVICE_TYPE_FAN = "fan"
+DEVICE_TYPE_LOCK = "lock"
+DEVICE_TYPE_MEDIA_PLAYER = "media_player"
 
 # ---- Protocol (PROTOCOL.md §1) --------------------------------------------
 # WebSocket subprotocol negotiated on the control channel.
@@ -73,6 +78,7 @@ URI_DEVICE_PRESENT = "session/devicePresent"
 URI_DEVICE_RECOGNIZED = "session/deviceRecognized"
 URI_AUTH_REQUEST = "session/authenticationRequest"
 URI_AUTH_RESPONSE = "session/authenticationResponse"
+URI_FILE_DOWNLOAD = "session/fileDownload"
 URI_STATE_REGISTER = "state/register"
 URI_STATE_UNREGISTER = "state/unregister"
 URI_STATE_UPDATE = "state/update"
@@ -124,6 +130,8 @@ ROOM_IS_MUTED = "IsMuted"
 ROOM_LIGHTS_ON = "RoomLightsAreOn"
 ROOM_BRIGHTNESS = "BrightnessLevel"
 ROOM_CURRENT_TEMPERATURE = "RoomCurrentTemperature"
+ROOM_SHADES_OPEN = "RoomShadesAreOpen"
+ROOM_FANS_ON = "RoomFansAreOn"
 
 # The full observed set of per-room attributes (PROTOCOL.md §6.1).  A room name is the
 # *first* dotted segment of any state key whose *second* segment is one of these — there

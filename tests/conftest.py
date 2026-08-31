@@ -31,6 +31,7 @@ def _load(name: str, relpath: str) -> None:
 
 for _name, _rel in (
     ("custom_components.savant_ha.const", "const.py"),
+    ("custom_components.savant_ha.uiconfig", "uiconfig.py"),
     ("custom_components.savant_ha.savant_client", "savant_client.py"),
 ):
     if _name not in sys.modules:

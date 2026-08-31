@@ -29,7 +29,6 @@ from .const import (
     CONF_PORT,
     CONF_ROOMS,
     CONF_USERNAME,
-    DEVICE_TYPE_ROOM,
     DOMAIN,
     LOGGER,
     build_default_subscribe_keys,
@@ -69,13 +68,13 @@ class SavantHub:
         # The approved device list from the config-flow picker (None for legacy entries
         # that predate the picker — platforms then fall back to dynamic discovery).
         self.devices: list[dict[str, str]] | None = data.get(CONF_DEVICES)
-        # Known rooms: approved room devices + user-supplied override rooms + rooms
-        # discovered at runtime (PROTOCOL.md §6.1).
+        # Known rooms: the room each approved device lives in + user-supplied override
+        # rooms + rooms discovered at runtime (PROTOCOL.md §6.1).
         self.rooms: set[str] = set(options.get(CONF_ROOMS) or [])
         if self.devices is not None:
             for device in self.devices:
-                if device.get("type") == DEVICE_TYPE_ROOM:
-                    self.rooms.add(device["id"])
+                if device.get("room"):
+                    self.rooms.add(device["room"])
 
         self.client = SavantClient(
             host=data[CONF_HOST],

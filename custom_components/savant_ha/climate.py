@@ -1,8 +1,8 @@
-"""Climate platform: one entity per Savant HVAC controller.
+"""Climate platform: one entity per Savant HVAC controller (from the config archive).
 
 Key/verb knowledge is reconstructed — see ``PROTOCOL.md`` §5.1 and §6.  The unit index
-(``_1``) maps to ``ThermostatAddress`` (``"1"``); additional units discovered on the
-wire are materialized as their own entities.
+(``_1``) maps to ``ThermostatAddress`` (``"1"``); each ``HVACEntities`` row becomes one
+thermostat.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    DEVICE_TYPE_HVAC,
+    DEVICE_TYPE_CLIMATE,
     DOMAIN,
     HVAC_STATE_PREFIX,
     SCOPE_HVAC,
@@ -74,11 +74,16 @@ class SavantClimate(SavantEntity, ClimateEntity):
     _attr_max_temp = 90
     _attr_target_temperature_step = 1.0
 
-    def __init__(self, hub: SavantHub, suffix: str, area: str = "") -> None:
-        super().__init__(hub, device_key=f"hvac:{suffix}", device_name="Thermostat", area=area)
+    def __init__(self, hub: SavantHub, device: dict[str, str], suffix: str) -> None:
+        super().__init__(
+            hub,
+            device_key=f"climate:{device['id']}",
+            device_name=device["name"],
+            area=device.get("area", ""),
+        )
         self._suffix = suffix
-        self._attr_unique_id = f"{hub.uid}_hvac_{suffix.lstrip('_')}"
-        self._attr_name = "Thermostat"
+        self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
+        self._attr_name = device["name"]
 
     # ------------------------------------------------------------ state keys
 
@@ -157,12 +162,19 @@ def _discovered_suffixes(hub: SavantHub) -> set[str]:
 
 def _build_entities(hub: SavantHub) -> list[SavantClimate]:
     if hub.devices is not None:
-        return [
-            SavantClimate(hub, device["id"], area=device.get("area", ""))
-            for device in hub.devices
-            if device.get("type") == DEVICE_TYPE_HVAC
+        climate_devices = [
+            d for d in hub.devices if d.get("type") == DEVICE_TYPE_CLIMATE
         ]
-    return [SavantClimate(hub, suffix) for suffix in sorted(_discovered_suffixes(hub))]
+        # ASSUMPTION: the Nth thermostat maps to state suffix "_<N>" (ThermostatAddress
+        # "<N>"); the exact per-entity unit index is not in the documented schema.
+        return [
+            SavantClimate(hub, device, f"_{index + 1}")
+            for index, device in enumerate(climate_devices)
+        ]
+    return [
+        SavantClimate(hub, {"id": suffix, "name": "Thermostat"}, suffix)
+        for suffix in sorted(_discovered_suffixes(hub))
+    ]
 
 
 async def async_setup_entry(

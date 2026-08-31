@@ -1,9 +1,9 @@
-"""Light platform: one entity per configured/discovered Savant room.
+"""Light platform: one entity per Savant lighting load (from the config archive).
 
-Room-level on/off is implemented via the observed ``__RoomSetBrightness`` verb
-(PROTOCOL.md §6).  Per-load dimming/colour (``DimmerSet``) requires load ``Address*``
-values that are not surfaced by the state bus yet, so lights are on/off-only for now;
-``BrightnessLevel`` is still exposed as a read-only attribute.
+Each ``LightEntities`` row in ``serviceImplementation.sqlite`` is a single load with an
+``addresses`` field (the ``DimmerSet`` ``Address*`` args) and a ``stateName`` field (the
+per-load dimmer/colour state key).  Loads without those fields fall back to room-level
+on/off via ``__RoomSetBrightness`` (PROTOCOL.md §6).
 """
 
 from __future__ import annotations
@@ -12,74 +12,102 @@ from typing import Any
 
 from homeassistant.components.light import ColorMode, LightEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    CONF_NAME,
-    DEVICE_TYPE_ROOM,
+    DEVICE_TYPE_LIGHT,
     DOMAIN,
     ROOM_BRIGHTNESS,
     ROOM_LIGHTS_ON,
     SVC_ENV_LIGHTING,
+    VERB_DIMMER_SET,
     VERB_ROOM_BRIGHTNESS,
 )
 from .entity import SavantEntity
 from .hub import SavantHub
 
 
-def _discovered_rooms(hub: SavantHub) -> set[str]:
-    # Only rooms that the host actually reports lighting for (no speculative entities).
-    rooms: set[str] = set()
-    for room in hub.rooms:
-        if (
-            f"{room}.{ROOM_LIGHTS_ON}" in hub.states
-            or f"{room}.{ROOM_BRIGHTNESS}" in hub.states
-        ):
-            rooms.add(room)
-    return rooms
+def _split_addresses(addresses: str) -> list[str]:
+    return [p.strip() for p in addresses.split(",")] if addresses else []
 
 
 class SavantLight(SavantEntity, LightEntity):
-    """Room-level lighting (on/off; brightness attribute read-only)."""
+    """A single Savant lighting load."""
 
-    _attr_supported_color_modes = {ColorMode.ONOFF}
+    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(self, hub: SavantHub, room: str, area: str = "") -> None:
+    def __init__(self, hub: SavantHub, device: dict[str, str]) -> None:
         super().__init__(
-            hub, device_key=f"room:{room}", device_name=room, area=area
+            hub,
+            device_key=f"light:{device['id']}",
+            device_name=device["name"],
+            area=device.get("area", ""),
         )
-        self._room = room
-        self._attr_unique_id = f"{hub.uid}_light_{room}"
-        self._attr_name = room
-        self._attr_color_mode = ColorMode.ONOFF
+        self._room = device.get("room", "")
+        self._state_name = device.get("state_name", "")
+        self._addresses = _split_addresses(device.get("addresses", ""))
+        self._attr_unique_id = f"{hub.uid}_light_{device['id']}"
+        self._attr_name = device["name"]
+        self._attr_color_mode = ColorMode.BRIGHTNESS
 
-    def _key(self, attr: str) -> str:
-        return f"{self._room}.{attr}"
+    def _component(self) -> str:
+        # Per-load: derive component/logical from stateName "<component>.<logical>...".
+        if self._state_name and "." in self._state_name:
+            return self._state_name.split(".", 1)[0]
+        # Room-level: the lighting component is the host/project name (PROTOCOL.md §6).
+        return self.hub.entry.data.get(CONF_NAME, "")
+
+    def _logical_component(self) -> str:
+        if self._state_name and "." in self._state_name:
+            parts = self._state_name.split(".")
+            return parts[1] if len(parts) > 1 else ""
+        return ""
+
+    def _dimmer_args(self, level: int) -> dict[str, Any]:
+        args: dict[str, Any] = {"DimmerLevel": level, "useLastDimmerValue": False}
+        for index, value in enumerate(self._addresses[:6], start=1):
+            args[f"Address{index}"] = value
+        for index in range(len(self._addresses) + 1, 7):
+            args[f"Address{index}"] = "(null)"
+        args.setdefault("Address1", "(null)")
+        args["FadeTime"] = "0.5"
+        args["Curve"] = "Custom 1"
+        return args
 
     @property
     def is_on(self) -> bool:
-        return bool(self._state(self._key(ROOM_LIGHTS_ON)))
+        if self._state_name:
+            level = self._state(self._state_name)
+            if isinstance(level, (int, float)):
+                return float(level) > 0
+        return bool(self._state(f"{self._room}.{ROOM_LIGHTS_ON}"))
 
     @property
     def brightness(self) -> int | None:
-        level = self._state(self._key(ROOM_BRIGHTNESS))
+        if self._state_name:
+            level = self._state(self._state_name)
+            if isinstance(level, (int, float)):
+                return max(0, min(255, int(float(level) / 100 * 255)))
+        level = self._state(f"{self._room}.{ROOM_BRIGHTNESS}")
         if isinstance(level, (int, float)):
             return max(0, min(255, int(float(level) / 100 * 255)))
         return 255 if self.is_on else 0
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return {"brightness_level": self._state(self._key(ROOM_BRIGHTNESS))}
-
-    def _component(self) -> str:
-        # The lighting ``component`` is the host/project name (PROTOCOL.md §6).  It is
-        # captured from the discovery record during config flow; if absent, commands
-        # cannot be formed.
-        return self.hub.entry.data.get(CONF_NAME, "")
-
     async def async_turn_on(self, **kwargs: Any) -> None:
-        # kwargs brightness is not used: room-level control only supports 0/100 today.
+        if self._state_name and self._addresses:
+            brightness = kwargs.get("brightness")
+            level = round(brightness / 255 * 100) if isinstance(brightness, int) else 100
+            await self._service_request(
+                VERB_DIMMER_SET,
+                component=self._component(),
+                service_type=SVC_ENV_LIGHTING,
+                zone=self._room,
+                logical_component=self._logical_component(),
+                request_args=self._dimmer_args(level),
+            )
+            return
         await self._service_request(
             VERB_ROOM_BRIGHTNESS,
             component=self._component(),
@@ -89,6 +117,16 @@ class SavantLight(SavantEntity, LightEntity):
         )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        if self._state_name and self._addresses:
+            await self._service_request(
+                VERB_DIMMER_SET,
+                component=self._component(),
+                service_type=SVC_ENV_LIGHTING,
+                zone=self._room,
+                logical_component=self._logical_component(),
+                request_args=self._dimmer_args(0),
+            )
+            return
         await self._service_request(
             VERB_ROOM_BRIGHTNESS,
             component=self._component(),
@@ -101,11 +139,17 @@ class SavantLight(SavantEntity, LightEntity):
 def _build_entities(hub: SavantHub) -> list[SavantLight]:
     if hub.devices is not None:
         return [
-            SavantLight(hub, device["id"], area=device.get("area", ""))
+            SavantLight(hub, device)
             for device in hub.devices
-            if device.get("type") == DEVICE_TYPE_ROOM
+            if device.get("type") == DEVICE_TYPE_LIGHT
         ]
-    return [SavantLight(hub, room) for room in sorted(_discovered_rooms(hub))]
+    # Legacy fallback: one room-level light per room that reports lighting.
+    return [
+        SavantLight(hub, {"id": room, "name": room, "room": room})
+        for room in sorted(hub.rooms)
+        if f"{room}.{ROOM_LIGHTS_ON}" in hub.states
+        or f"{room}.{ROOM_BRIGHTNESS}" in hub.states
+    ]
 
 
 async def async_setup_entry(

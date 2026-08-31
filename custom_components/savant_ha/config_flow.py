@@ -5,9 +5,11 @@ Three steps, matching the standard device-import UX:
 1. **user** — host address (+ optional explicit port). UDP discovery resolves the
    control port / ``homeId``.
 2. **login** — the host-local account (``{user, password}``, PROTOCOL.md §4.1). The
-   integration connects, authenticates, and collects the discoverable device surface.
-3. **devices** — the collected rooms / thermostats / audio zones, each with an area
-   override. On accept, the entry is created with the approved device list.
+   integration connects, authenticates, downloads the config archive, and enumerates
+   the device inventory (PROTOCOL.md §13).
+3. **devices** — the collected devices (lights / thermostats / shades / fans / AV
+   zones / …), each with an area override. On accept, the entry is created with the
+   approved device list.
 """
 
 from __future__ import annotations
@@ -29,9 +31,9 @@ from .const import (
     CONF_HOST_TOKEN,
     CONF_NAME,
     CONF_ROOMS,
-    DEVICE_TYPE_AUDIO_ZONE,
-    DEVICE_TYPE_HVAC,
-    DEVICE_TYPE_ROOM,
+    DEVICE_TYPE_CLIMATE,
+    DEVICE_TYPE_LIGHT,
+    DEVICE_TYPE_MEDIA_PLAYER,
     DOMAIN,
     LOGGER,
 )
@@ -78,19 +80,33 @@ def _parse_rooms(raw: Any) -> list[str]:
 
 def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
     devices: list[dict[str, str]] = []
+    for dev in info.devices:
+        devices.append(
+            {
+                "type": dev.device_type,
+                "id": dev.stable_id,
+                "name": dev.name,
+                "area": dev.room,
+                "room": dev.room,
+                "addresses": dev.addresses,
+                "state_name": dev.state_name,
+                "zone": dev.zone,
+            }
+        )
+    if devices:
+        return devices
+    # Fallback (config archive unavailable): derive from the state bus.
     for room in sorted(info.rooms):
         devices.append(
-            {"type": DEVICE_TYPE_ROOM, "id": room, "name": room, "area": room}
+            {"type": DEVICE_TYPE_LIGHT, "id": room, "name": room, "area": room, "room": room}
         )
     for suffix in sorted(info.hvac_suffixes):
         label = "Thermostat" if suffix == "_1" else f"Thermostat {suffix.lstrip('_')}"
-        devices.append(
-            {"type": DEVICE_TYPE_HVAC, "id": suffix, "name": label, "area": ""}
-        )
+        devices.append({"type": DEVICE_TYPE_CLIMATE, "id": suffix, "name": label, "area": ""})
     for zone in sorted(info.zones):
         devices.append(
             {
-                "type": DEVICE_TYPE_AUDIO_ZONE,
+                "type": DEVICE_TYPE_MEDIA_PLAYER,
                 "id": str(zone),
                 "name": f"Audio Zone {zone}",
                 "area": "",
@@ -102,14 +118,15 @@ def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
 def _devices_schema(devices: list[dict[str, str]]) -> vol.Schema:
     fields: dict[Any, Any] = {}
     for index, device in enumerate(devices):
-        fields[
-            vol.Optional(f"include_{index}", default=True, description=device["name"])
-        ] = bool
+        desc = f"{device.get('type', '')} · {device['name']}"
+        if device.get("room"):
+            desc += f" · {device['room']}"
+        fields[vol.Optional(f"include_{index}", default=True, description=desc)] = bool
         fields[
             vol.Optional(
                 f"area_{index}",
                 default=device.get("area", ""),
-                description=device["name"],
+                description=desc,
             )
         ] = str
     return vol.Schema(fields)
