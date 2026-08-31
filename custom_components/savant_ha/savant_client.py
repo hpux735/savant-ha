@@ -35,6 +35,9 @@ from .const import (
     DASHBOARD_REQUEST_SCENES,
     DEVICE_APP,
     DEVICE_MAKE,
+    DEVICE_MODEL,
+    DEVICE_NAME,
+    DEVICE_OS,
     DEVICE_TYPE,
     DISCOVERY_PORT_CONTROL,
     DISCOVERY_PORT_PRESENCE,
@@ -534,7 +537,7 @@ class SavantClient:
         self._auth_task = asyncio.ensure_future(self._run_auth_flow())
 
     async def _send_device_present(self) -> None:
-        # A local-only session omits cloudToken/configurationID (PROTOCOL.md §4.9) —
+        # A local-only session omits cloudToken/configurationID (PROTOCOL.md §4.1) —
         # include them only when the user actually supplied them.
         message: dict[str, Any] = {
             "protocolVersion": "4",
@@ -543,10 +546,10 @@ class SavantClient:
                 "UID": self._uid,
                 "make": DEVICE_MAKE,
                 "app": DEVICE_APP,
-                "model": DEVICE_TYPE,
-                "OS": DEVICE_TYPE,
+                "model": DEVICE_MODEL,
+                "OS": DEVICE_OS,
                 "type": DEVICE_TYPE,
-                "name": DEVICE_TYPE,
+                "name": DEVICE_NAME,
             },
             "messageFormat": 2,
         }

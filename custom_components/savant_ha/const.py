@@ -244,10 +244,15 @@ def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
 
 
 # ---- Defaults --------------------------------------------------------------
-# Identity values sent in devicePresent (PROTOCOL.md §4.0/§4.1 of the sibling repo).
-# The host does NOT validate homeId/device.UID for a local login, and no cloudToken/
-# configurationID is required — a freshly generated identity is accepted.  ``UID`` is
-# a freshly generated per-install UUID.
-DEVICE_MAKE = "Home Assistant"
-DEVICE_APP = "savant_ha"
-DEVICE_TYPE = "Home Assistant"
+# Identity values sent in devicePresent (PROTOCOL.md §4.0/§4.1/§4.4 of the sibling
+# repo).  The sibling doc states homeId/device.UID are NOT validated for a local login
+# but does not say the rest of the device block is ignored — the only identity ever
+# observed to be accepted is the Savant iOS app's own (captured on the wire).  We
+# therefore present the observed values; this is reverse-engineered observation, not
+# vendor knowledge.  ``UID`` remains a freshly generated per-install UUID.
+DEVICE_MAKE = "Apple"
+DEVICE_APP = "Savant (11.2.4)"
+DEVICE_MODEL = "iPhone12,3"
+DEVICE_OS = "iOS 26.6"
+DEVICE_TYPE = "iPhone"
+DEVICE_NAME = "iPhone"
