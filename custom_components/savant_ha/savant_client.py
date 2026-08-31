@@ -59,6 +59,7 @@ from .const import (
     URI_DASHBOARD_UPDATE,
     URI_DEVICE_PRESENT,
     URI_DEVICE_RECOGNIZED,
+    URI_FEATURE_LOCK,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
@@ -250,9 +251,10 @@ async def probe_host(
         # be suppressed explicitly or it escapes and crashes the config flow.
         with suppress(asyncio.CancelledError, Exception):
             await receive
+        # Capture the auth state BEFORE _disconnect() resets _authorized.
+        info.authorized = client.authorized
+        info.auth_response_seen = client.auth_response_seen
         await client._disconnect()
-    info.authorized = client.authorized
-    info.auth_response_seen = client.auth_response_seen
     LOGGER.info(
         "Savant probe: authorized=%s auth_response=%s rooms=%d hvac=%d zones=%d",
         info.authorized,
@@ -758,6 +760,9 @@ class SavantClient:
             self._handle_device_recognized(messages)
         elif uri == URI_AUTH_RESPONSE:
             self._handle_auth_response(messages)
+        elif uri == URI_FEATURE_LOCK:
+            # License/entitlement gating (PROTOCOL.md §12) — informational only.
+            LOGGER.debug("Savant featureLock: %s", _redact(messages))
         elif uri in (URI_DASHBOARD_UPDATE, URI_DASHBOARD_REQUEST):
             self._emit_rooms(rooms_from_scene_messages(messages))
         else:

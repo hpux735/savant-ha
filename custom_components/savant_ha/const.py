@@ -81,6 +81,7 @@ URI_DCM_REQUEST = "dcm/request"
 URI_DASHBOARD_REGISTER = "dis/dashboard/register"
 URI_DASHBOARD_UPDATE = "dis/dashboard/update"
 URI_DASHBOARD_REQUEST = "dis/dashboard/request"
+URI_FEATURE_LOCK = "featureLock"
 
 # Dashboard RPC verb that returns the scene list (which embeds room names).
 DASHBOARD_REQUEST_SCENES = "GetAVAutomationScenes"

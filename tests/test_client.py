@@ -381,5 +381,29 @@ def test_probe_host_survives_cancelling_a_blocked_receive(monkeypatch):
     assert info.authorized is True
 
 
+def test_probe_host_captures_authorized_before_disconnect(monkeypatch):
+    # Regression: _disconnect() resets _authorized; probe_host must capture the auth
+    # state before disconnecting, or the config flow wrongly reports "login failed".
+    async def fake_connect(self):
+        self._authorized = True
+        self._auth_response_seen = True
+
+    async def fake_receive_loop(self):
+        await asyncio.sleep(0.001)
+
+    async def fake_disconnect(self):
+        self._authorized = False  # mimic the real _disconnect
+
+    monkeypatch.setattr(sc.SavantClient, "_connect", fake_connect)
+    monkeypatch.setattr(sc.SavantClient, "_receive_loop", fake_receive_loop)
+    monkeypatch.setattr(sc.SavantClient, "_disconnect", fake_disconnect)
+
+    info = asyncio.run(
+        probe_host("10.0.0.5", 12345, username="u", password="p", timeout=0.05)
+    )
+    assert info.authorized is True
+    assert info.auth_response_seen is True
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
