@@ -73,7 +73,9 @@ _RoomsCallback = Callable[[set[str]], None]
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
 
-# Message keys that must never be written to logs (PII per AGENTS.md).
+# Message keys that must never be written to logs (PII per AGENTS.md).  Includes the
+# host identity/credential fields carried in deviceRecognized (hostSecret/hostUID/
+# homeInfo/postalCode), the local-account user list, and the username.
 _SENSITIVE_KEYS = frozenset(
     {
         "password",
@@ -85,6 +87,14 @@ _SENSITIVE_KEYS = frozenset(
         "onboardKey",
         "userHostName",
         "UID",
+        "hostSecret",
+        "hostUID",
+        "hostName",
+        "homeInfo",
+        "hostTimeZone",
+        "postalCode",
+        "users",
+        "user",
     }
 )
 
