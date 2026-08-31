@@ -513,6 +513,9 @@ class SavantClient:
             url,
             ssl=self._ssl_context(),
             protocols=[RPM_SUBPROTOCOL],
+            # The app's upgrade request carries Origin: wss://<host>:<port>
+            # (PROTOCOL.md §4.3); match it.
+            origin=f"wss://{self._host}:{self._port}",
             receive_timeout=15.0,
         )
         LOGGER.info(
