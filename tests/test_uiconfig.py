@@ -33,8 +33,8 @@ def _make_sqlite_bytes() -> bytes:
     conn.execute("INSERT INTO Rooms VALUES (1,'Kitchen','r1'),(2,'Living Room','r2')")
     conn.execute(
         "INSERT INTO Zones VALUES (10,'Kitchen-Recessed','Environmental',"
-        "'SVC_ENV_LIGHTING','Host'),(11,'Kitchen-Music','Environmental',"
-        "'SVC_AV_SAVANTMUSIC','Music')"
+        "'SVC_ENV_LIGHTING','Host'),(11,'Audio Zone 1','Environmental',"
+        "'SVC_AV_SAVANTMUSIC','Audio Zone 1')"
     )
     conn.execute("INSERT INTO ZoneRoomMap VALUES (10,1),(11,1)")
     conn.execute(
@@ -102,8 +102,11 @@ def test_reassemble_and_parse_devices():
     assert climate.room == "Kitchen"
 
     media = next(d for d in devices if d.device_type == "media_player")
+    assert media.name == "Audio Zone 1"
     assert media.room == "Kitchen"
     assert media.zone == "Audio Zone 1"
+    # ServiceImplementationServiceResources must NOT be over-enumerated into devices.
+    assert sum(1 for d in devices if d.device_type == "media_player") == 1
 
 
 def test_reassemble_ignores_non_archive_frames():

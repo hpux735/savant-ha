@@ -179,6 +179,15 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
             str(row[4] or ""),
         )
 
+    LOGGER.debug(
+        "Savant uiconfig Rooms: %s",
+        sorted((k, v) for k, v in rooms.items()),
+    )
+    LOGGER.debug(
+        "Savant uiconfig ZoneRoomMap: %s",
+        sorted(zone_room.items()),
+    )
+
     tables = [
         r[0]
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -230,7 +239,7 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
                 )
             )
 
-    _parse_media_zones(conn, tables, devices)
+    _parse_media_zones(conn, tables, rooms, zone_room, devices)
     return devices
 
 
@@ -242,38 +251,41 @@ def _type_for(table: str) -> str | None:
 
 
 def _parse_media_zones(
-    conn: sqlite3.Connection, tables: list[str], devices: list[SavantDevice]
+    conn: sqlite3.Connection,
+    tables: list[str],
+    rooms: dict[Any, str],
+    zone_room: dict[Any, Any],
+    devices: list[SavantDevice],
 ) -> None:
-    # Media/AV endpoints live in the master "zoned service" list (PROTOCOL.md §13.1c),
-    # one row per <zone>-<component>-<logicalComponent>-<variantID>-<serviceType>.
-    sir = "ServiceImplementationServiceResources"
-    if sir not in tables:
+    # Audio zones are Environmental zones whose serviceID is an AV service
+    # (PROTOCOL.md §6.2/§13.2); their room is resolved via ZoneRoomMap like the entity
+    # tables.  The old ServiceImplementationServiceResources approach over-enumerated
+    # and produced room-named devices.
+    if "Zones" not in tables:
         return
-    cols = _table_columns(conn, sir)
-    svc_col = _pick(cols, ("serviceType", "service_type"))
-    zone_col = _pick(cols, ("zone",))
-    lc_col = _pick(cols, ("logicalComponent", "logical_component"))
-    alias_col = _pick(cols, ("serviceNameAlias", "service_name_alias"))
-    if svc_col is None:
-        return
-    cursor = conn.execute(f'SELECT * FROM "{sir}"')
-    for row in cursor:
-        d = _row_to_dict(cursor, row)
-        service_type = str(d.get(svc_col) or "")
-        if "SVC_AV" not in service_type:
+    rows = list(
+        conn.execute("SELECT id, name, type, serviceID, logicalComponent FROM Zones")
+    )
+    LOGGER.debug(
+        "Savant uiconfig Zones: %s",
+        [(r[0], r[1], r[2], r[3], r[4]) for r in rows],
+    )
+    for zid, name, ztype, service_id, logical in rows:
+        if (ztype or "") != "Environmental":
             continue
-        zone = str(d.get(zone_col) or "")
-        logical = str(d.get(lc_col) or "")
-        name = str(d.get(alias_col) or "") or logical or zone
-        if not name:
+        if "SVC_AV" not in (service_id or ""):
             continue
+        label = (logical or name or "").strip()
+        if not label:
+            continue
+        room = rooms.get(zone_room.get(zid), "")
         devices.append(
             SavantDevice(
                 device_type="media_player",
-                name=name,
-                room=zone,
-                entity_id=f"media_player:{d.get('id')}",
-                zone=logical,
-                extra={"service_id": service_type},
+                name=label,
+                room=room,
+                entity_id=f"media_player:{zid}",
+                zone=label,
+                extra={"service_id": service_id or ""},
             )
         )
