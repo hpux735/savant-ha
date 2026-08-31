@@ -56,6 +56,7 @@ class SavantDevice:
     addresses: str = ""
     state_name: str = ""
     zone: str = ""
+    component: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -155,18 +156,7 @@ def _pick(cols: list[str], candidates: tuple[str, ...]) -> str | None:
 
 
 def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
-    # PROTOCOL.md §13.1/§13.2: every table uses ``id INTEGER PRIMARY KEY``; the
-    # ``zoneID``/``roomID`` columns are integer references to the named table's ``id``.
-    # Rooms.id (int) -> name
-    rooms: dict[Any, str] = {}
-    for row in conn.execute("SELECT id, name FROM Rooms"):
-        rooms[row[0]] = str(row[1] or "")
-
-    # ZoneRoomMap: zoneID (int) -> roomID (int)
-    zone_room: dict[Any, Any] = {}
-    for row in conn.execute("SELECT zoneID, roomID FROM ZoneRoomMap"):
-        zone_room[row[0]] = row[1]
-
+    # PROTOCOL.md §13.1/§13.2: ``zoneID`` is an integer reference to ``Zones.id``.
     # Zones.id (int) -> (name, type, serviceID, logicalComponent)
     zones: dict[Any, tuple[str, str, str, str]] = {}
     for row in conn.execute(
@@ -178,15 +168,6 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
             str(row[3] or ""),
             str(row[4] or ""),
         )
-
-    LOGGER.debug(
-        "Savant uiconfig Rooms: %s",
-        sorted((k, v) for k, v in rooms.items()),
-    )
-    LOGGER.debug(
-        "Savant uiconfig ZoneRoomMap: %s",
-        sorted(zone_room.items()),
-    )
 
     tables = [
         r[0]
@@ -200,12 +181,10 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
     )
 
     def _room_for(zone_id: Any) -> str:
-        room_id = zone_room.get(zone_id)
-        room = rooms.get(room_id, "")
-        if room:
-            return room
-        zone_name = zones.get(zone_id, ("", "", "", ""))[0]
-        return zone_name.split("-", 1)[0].strip() if zone_name else ""
+        # The Environmental zone's name IS the room name (one zone per room per service,
+        # e.g. "Office", "Dining Room").  ZoneRoomMap is NOT usable here — HVAC zones are
+        # shared across every room (many-to-many), so a 1:1 zone->room map is wrong.
+        return zones.get(zone_id, ("", "", "", ""))[0]
 
     devices: list[SavantDevice] = []
     for table in sorted(tables):
@@ -239,7 +218,7 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
                 )
             )
 
-    _parse_media_zones(conn, tables, rooms, zone_room, devices)
+    _parse_media_zones(conn, tables, devices)
     return devices
 
 
@@ -253,39 +232,47 @@ def _type_for(table: str) -> str | None:
 def _parse_media_zones(
     conn: sqlite3.Connection,
     tables: list[str],
-    rooms: dict[Any, str],
-    zone_room: dict[Any, Any],
     devices: list[SavantDevice],
 ) -> None:
-    # Audio zones are Environmental zones whose serviceID is an AV service
-    # (PROTOCOL.md §6.2/§13.2); their room is resolved via ZoneRoomMap like the entity
-    # tables.  The old ServiceImplementationServiceResources approach over-enumerated
-    # and produced room-named devices.
-    if "Zones" not in tables:
+    # Audio zones are the music service's "Audio Zone N" zoned services in
+    # ServiceImplementationServiceResources. The `zone` column is the room;
+    # `component`/`logicalComponent` identify the audio zone (zone numbers are
+    # per-component). A zone may be reached through a nonzero pathOrder, so deduplicate
+    # the route rows instead of assuming the endpoint always has pathOrder 0.
+    sir = "ServiceImplementationServiceResources"
+    if sir not in tables:
         return
-    rows = list(
-        conn.execute("SELECT id, name, type, serviceID, logicalComponent FROM Zones")
-    )
-    LOGGER.debug(
-        "Savant uiconfig Zones: %s",
-        [(r[0], r[1], r[2], r[3], r[4]) for r in rows],
-    )
-    for zid, name, ztype, service_id, logical in rows:
-        if (ztype or "") != "Environmental":
+    cols = _table_columns(conn, sir)
+    lc_col = _pick(cols, ("logicalComponent", "logical_component"))
+    svc_col = _pick(cols, ("serviceType", "service_type"))
+    zone_col = _pick(cols, ("zone",))
+    comp_col = _pick(cols, ("component",))
+    if not (lc_col and svc_col and zone_col):
+        return
+    seen: set[tuple[str, str]] = set()
+    cursor = conn.execute(f'SELECT * FROM "{sir}"')
+    for row in cursor:
+        d = _row_to_dict(cursor, row)
+        if str(d.get(svc_col) or "") != "SVC_AV_SAVANTMUSIC":
             continue
-        if "SVC_AV" not in (service_id or ""):
+        logical = str(d.get(lc_col) or "")
+        if not logical.startswith("Audio Zone"):
             continue
-        label = (logical or name or "").strip()
-        if not label:
+        component = str(d.get(comp_col) or "")
+        room = str(d.get(zone_col) or "")
+        key = (component, logical)
+        if key in seen:
             continue
-        room = rooms.get(zone_room.get(zid), "")
+        seen.add(key)
+        name = f"{component} {logical}".strip() if component else logical
         devices.append(
             SavantDevice(
                 device_type="media_player",
-                name=label,
+                name=name,
                 room=room,
-                entity_id=f"media_player:{zid}",
-                zone=label,
-                extra={"service_id": service_id or ""},
+                entity_id=f"media_player:{d.get('id')}",
+                zone=logical,
+                component=component,
+                extra={"service_id": "SVC_AV_SAVANTMUSIC"},
             )
         )

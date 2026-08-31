@@ -78,8 +78,8 @@ def _parse_rooms(raw: Any) -> list[str]:
     return list(dict.fromkeys(r for r in rooms if r))
 
 
-def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
-    devices: list[dict[str, str]] = []
+def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, Any]]:
+    devices: list[dict[str, Any]] = []
     for dev in info.devices:
         devices.append(
             {
@@ -91,6 +91,7 @@ def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
                 "addresses": dev.addresses,
                 "state_name": dev.state_name,
                 "zone": dev.zone,
+                "component": dev.component,
             }
         )
     if devices:
@@ -115,14 +116,14 @@ def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
     return devices
 
 
-def _device_label(device: dict[str, str]) -> str:
+def _device_label(device: dict[str, Any]) -> str:
     label = f"{device.get('type', '')} · {device['name']}"
-    if device.get("room"):
+    if device.get("room") and device["room"] != device["name"]:
         label += f" · {device['room']}"
     return label
 
 
-def _devices_schema(devices: list[dict[str, str]]) -> vol.Schema:
+def _devices_schema(devices: list[dict[str, Any]]) -> vol.Schema:
     # A multi-select of device names (proper labels), defaulting to all selected.  The
     # device's area is its room from the config archive (looked up, not typed).
     options = [
@@ -149,7 +150,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._home_id: str = ""
         self._username: str = ""
         self._password: str = ""
-        self._devices: list[dict[str, str]] = []
+        self._devices: list[dict[str, Any]] = []
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

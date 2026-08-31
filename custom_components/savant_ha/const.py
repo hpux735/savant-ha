@@ -178,8 +178,8 @@ def room_state_keys(rooms: set[str] | list[str]) -> list[str]:
 GLOBAL_CURRENT_TEMPERATURE = "global.CurrentTemperature"
 GLOBAL_LIGHTS_ON = "global.LightsAreOn"
 
-# Audio zones (PROTOCOL.md §5.3). The prefix includes the zone number; key is
-# ``Music.Audio Zone N.SVC_AV_SAVANTMUSIC.<attr>``.
+# Legacy Audio Zone prefix (PROTOCOL.md §5.3). New config-archive-derived zones retain
+# their component identity, e.g. ``Living Room Sound Bar.Audio Zone 1...``.
 MUSIC_ZONE_PREFIX = "Music.Audio Zone "
 
 # ---- State subscription defaults (PROTOCOL.md §5 / §6.1) ------------------
@@ -265,6 +265,16 @@ def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
     keys.extend(GLOBAL_STATE_KEYS)
     keys.extend(room_state_keys(set(rooms or [])))
     return keys
+
+
+def audio_zone_state_keys(component: str, logical_component: str) -> list[str]:
+    """Return state keys for one archive-derived music endpoint.
+
+    The configuration archive identifies an endpoint by both its component and logical
+    component. Audio Zone numbers are only unique within a component (PROTOCOL.md §13).
+    """
+    prefix = f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
+    return [f"{prefix}{attr}" for attr in MUSIC_ZONE_ATTRIBUTES]
 
 
 # ---- Defaults --------------------------------------------------------------

@@ -1,9 +1,9 @@
 """Media player platform: one entity per Savant audio zone.
 
-Uses the observed ``Music.Audio Zone N.SVC_AV_SAVANTMUSIC.*`` state keys for now-playing
-metadata and ``PowerOn`` / ``SetVolume`` for control (PROTOCOL.md §5.3/§6).  Volume and
-mute are held on the *room*, not the zone, so volume control is offered only when the
-zone's active room can be resolved via ``ZonesActiveIn``.
+Uses the archive-derived ``<component>.Audio Zone N.SVC_AV_SAVANTMUSIC.*`` state keys
+for now-playing metadata and ``PowerOn`` / ``SetVolume`` for control (PROTOCOL.md
+§5.3/§6/§13). Volume and mute are held on the *room*, not the zone, so volume control
+is offered only when the zone's active room can be resolved via ``ZonesActiveIn``.
 """
 
 from __future__ import annotations
@@ -38,14 +38,14 @@ _ALBUM = "CurrentAlbumName"
 _SERVICE = "CurrentStreamingService"
 
 
-def _zone_prefix(zone: int) -> str:
-    return f"{MUSIC_ZONE_PREFIX}{zone}.{SVC_AV_SAVANTMUSIC}."
+def _zone_prefix(component: str, logical_component: str) -> str:
+    return f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
 
 
-def _active_rooms(hub: SavantHub, zone: int) -> list[str]:
+def _active_rooms(hub: SavantHub, component: str, logical_component: str) -> list[str]:
     # ZonesActiveIn maps zone -> room (§6.2); the exact shape is unconfirmed, so both a
     # mapping (values) and a list are accepted defensively.
-    value = hub.get(f"{_zone_prefix(zone)}{_ZONE_MARKER}")
+    value = hub.get(f"{_zone_prefix(component, logical_component)}{_ZONE_MARKER}")
     if isinstance(value, dict):
         return [r for r in value.values() if isinstance(r, str)]
     if isinstance(value, list):
@@ -56,22 +56,30 @@ def _active_rooms(hub: SavantHub, zone: int) -> list[str]:
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     """A single Savant audio zone."""
 
-    def __init__(self, hub: SavantHub, device: dict[str, str], zone: int) -> None:
+    def __init__(
+        self,
+        hub: SavantHub,
+        device: dict[str, object],
+        component: str,
+        logical_component: str,
+    ) -> None:
         super().__init__(
             hub,
             device_key=f"media:{device['id']}",
             device_name=device["name"],
             area=device.get("area", ""),
         )
-        self._zone = zone
+        self._component = component
+        self._logical_component = logical_component
+        self._room = str(device.get("room") or "")
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
         self._attr_name = device["name"]
 
     def _key(self, attr: str) -> str:
-        return f"{_zone_prefix(self._zone)}{attr}"
+        return f"{_zone_prefix(self._component, self._logical_component)}{attr}"
 
     def _active_rooms(self) -> list[str]:
-        return _active_rooms(self.hub, self._zone)
+        return _active_rooms(self.hub, self._component, self._logical_component)
 
     # ------------------------------------------------------------ media player
 
@@ -117,26 +125,26 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         return None
 
     async def async_turn_on(self) -> None:
-        zone = self._active_rooms()
+        rooms = self._active_rooms()
         await self._service_request(
             VERB_POWER_ON,
-            component="Music",
+            component=self._component,
             service_type=SVC_AV_SAVANTMUSIC,
-            zone=zone[0] if zone else "",
-            logical_component=f"Audio Zone {self._zone}",
+            zone=rooms[0] if rooms else self._room,
+            logical_component=self._logical_component,
             variant_id="1",
         )
 
     async def async_set_volume_level(self, volume: float) -> None:
-        zone = self._active_rooms()
-        if not zone:
+        rooms = self._active_rooms()
+        if not rooms:
             return
         await self._service_request(
             VERB_SET_VOLUME,
-            component="Music",
+            component=self._component,
             service_type=SVC_AV_SAVANTMUSIC,
-            zone=zone[0],
-            logical_component=f"Audio Zone {self._zone}",
+            zone=rooms[0],
+            logical_component=self._logical_component,
             variant_id="1",
             request_args={"VolumeValue": int(round(volume * 100))},
         )
@@ -156,30 +164,36 @@ def _discovered_zones(hub: SavantHub) -> set[int]:
     return zones
 
 
-def _zone_number(device: dict[str, str]) -> int | None:
-    for field in (device.get("zone", ""), device.get("name", "")):
+def _logical_component(device: dict[str, object]) -> str | None:
+    zone = str(device.get("zone") or "")
+    if zone.startswith("Audio Zone "):
+        return zone
+    for field in (str(device.get("name") or ""),):
         match = re.search(r"Audio Zone\s+(\d+)", field)
         if match:
-            return int(match.group(1))
+            return f"Audio Zone {match.group(1)}"
     return None
 
 
 def _build_entities(hub: SavantHub) -> list[SavantMediaPlayer]:
     if hub.devices is not None:
         media = [d for d in hub.devices if d.get("type") == DEVICE_TYPE_MEDIA_PLAYER]
-        used: set[int] = set()
         entities: list[SavantMediaPlayer] = []
-        index = 1
         for device in media:
-            zone = _zone_number(device) or index
-            while zone in used:
-                zone += 1
-            used.add(zone)
-            index += 1
-            entities.append(SavantMediaPlayer(hub, device, zone))
+            logical_component = _logical_component(device)
+            component = str(device.get("component") or "Music")
+            if logical_component:
+                entities.append(
+                    SavantMediaPlayer(hub, device, component, logical_component)
+                )
         return entities
     return [
-        SavantMediaPlayer(hub, {"id": str(z), "name": f"Audio Zone {z}"}, z)
+        SavantMediaPlayer(
+            hub,
+            {"id": str(z), "name": f"Audio Zone {z}"},
+            "Music",
+            f"Audio Zone {z}",
+        )
         for z in sorted(_discovered_zones(hub))
     ]
 

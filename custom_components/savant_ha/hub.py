@@ -31,6 +31,7 @@ from .const import (
     CONF_USERNAME,
     DOMAIN,
     LOGGER,
+    audio_zone_state_keys,
     build_default_subscribe_keys,
     new_uid,
     room_from_state_key,
@@ -67,7 +68,7 @@ class SavantHub:
         self.uid = data.get("uid") or new_uid()
         # The approved device list from the config-flow picker (None for legacy entries
         # that predate the picker — platforms then fall back to dynamic discovery).
-        self.devices: list[dict[str, str]] | None = data.get(CONF_DEVICES)
+        self.devices: list[dict[str, Any]] | None = data.get(CONF_DEVICES)
         # Known rooms: the room each approved device lives in + user-supplied override
         # rooms + rooms discovered at runtime (PROTOCOL.md §6.1).
         self.rooms: set[str] = set(options.get(CONF_ROOMS) or [])
@@ -75,6 +76,18 @@ class SavantHub:
             for device in self.devices:
                 if device.get("room"):
                     self.rooms.add(device["room"])
+
+        subscribe_keys = build_default_subscribe_keys(list(self.rooms))
+        if self.devices is not None:
+            for device in self.devices:
+                if (
+                    device.get("type") == "media_player"
+                    and device.get("component")
+                    and device.get("zone")
+                ):
+                    subscribe_keys.extend(
+                        audio_zone_state_keys(device["component"], device["zone"])
+                    )
 
         self.client = SavantClient(
             host=data[CONF_HOST],
@@ -86,7 +99,7 @@ class SavantHub:
             host_token=options.get(CONF_HOST_TOKEN) or None,
             username=options.get(CONF_USERNAME) or data.get(CONF_USERNAME, ""),
             password=options.get(CONF_PASSWORD) or data.get(CONF_PASSWORD, ""),
-            subscribe_keys=build_default_subscribe_keys(list(self.rooms)),
+            subscribe_keys=list(dict.fromkeys(subscribe_keys)),
         )
         self.client.on_state_update = self._on_state_update
         self.client.on_status = self._on_status
