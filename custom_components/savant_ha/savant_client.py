@@ -21,7 +21,6 @@ import gzip
 import socket
 import ssl
 import time
-import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -63,6 +62,7 @@ from .const import (
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
+    new_uid,
     room_from_state_key,
 )
 
@@ -382,8 +382,9 @@ class SavantClient:
     ) -> None:
         self._host = host
         self._port = port
-        # Client device identity — generated once per config entry.
-        self._uid = uid or str(uuid.uuid4())
+        # Client device identity — generated per config entry if not supplied.  Must be
+        # non-UUID-shaped (see const.new_uid).
+        self._uid = uid or new_uid()
         self._home_id = home_id
         self._cloud_token = cloud_token
         self._configuration_id = configuration_id
@@ -551,10 +552,11 @@ class SavantClient:
         )
         _log_tls_info(self._ws)
         LOGGER.info(
-            "Savant WS connected to %s:%s (subprotocol=%s)",
+            "Savant WS connected to %s:%s (subprotocol=%s, aiohttp=%s)",
             self._host,
             self._port,
             self._ws.protocol,
+            aiohttp.__version__,
         )
         self._connected = True
         self._authorized = False
@@ -703,13 +705,24 @@ class SavantClient:
                         self._handle_frame(msg.data)
                     except Exception:  # noqa: BLE001 - never die on a bad frame
                         LOGGER.exception("Failed to decode Savant frame")
+                elif msg.type is WSMsgType.TEXT:
+                    # Unexpected — the protocol uses binary frames.  Log it (truncated,
+                    # redacted) so we can see if the host is sending something odd.
+                    LOGGER.warning("Savant <- unexpected TEXT frame: %r", msg.data[:200])
+                elif msg.type is WSMsgType.PING:
+                    LOGGER.debug("Savant <- WS ping")
+                elif msg.type is WSMsgType.PONG:
+                    LOGGER.debug("Savant <- WS pong")
                 elif msg.type in (
                     WSMsgType.CLOSE,
                     WSMsgType.CLOSING,
                     WSMsgType.CLOSED,
                     WSMsgType.ERROR,
                 ):
+                    LOGGER.info("Savant WS closing: %s", msg.type.name)
                     break
+                else:
+                    LOGGER.debug("Savant <- WS msg type=%s", msg.type.name)
         finally:
             keepalive.cancel()
             # CancelledError is a BaseException — suppress it explicitly too.

@@ -118,6 +118,12 @@ Notes for implementers:
 - `hostToken`/`secretKey` are base64 of UUID-format strings; re-presenting `hostToken`
   on reconnect skips the password.
 - `authenticationResponse.permissions` appears only on the cloud path, not local login.
+- **The client `uid` must NOT be UUID-shaped.** Live-verified: when `device.UID` / the
+  envelope `uid` contains a 32-hex-character substring (e.g. `uuid4().hex`, or a
+  dashed UUID), the host stays silent — it treats the uid as a returning device and
+  waits for a `hostToken` instead of answering `deviceRecognized`. Use a clearly
+  non-UUID uid (e.g. a `homeassistant-<16-hex>` prefix form); `homeId` is still
+  accepted even when freshly generated.
 
 ## 4. Endpoints used by this integration
 

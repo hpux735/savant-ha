@@ -7,13 +7,11 @@ live observation — see ``PROTOCOL.md`` and the sibling ``savant-app-re`` proje
 
 from __future__ import annotations
 
-import uuid
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_UID, DOMAIN
+from .const import CONF_UID, DOMAIN, new_uid
 from .hub import SavantHub
 
 PLATFORMS: list[Platform] = [
@@ -42,7 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ``uid`` is constant per install).
     if not entry.data.get(CONF_UID):
         data = dict(entry.data)
-        data[CONF_UID] = uuid.uuid4().hex
+        data[CONF_UID] = new_uid()
         hass.config_entries.async_update_entry(entry, data=data)
 
     hub = SavantHub(hass, entry)

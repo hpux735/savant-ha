@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import re
 
 import msgpack
 import pytest
@@ -18,6 +19,7 @@ from custom_components.savant_ha.const import (
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
+    new_uid,
     room_from_state_key,
     room_state_keys,
 )
@@ -62,6 +64,21 @@ def test_host_info_from_record_extracts_known_fields():
     assert info.build_version == "9.0"
     # unlisted keys are preserved in `extra`
     assert info.extra["onboardKey"] == "ignore-me-not"
+
+
+def test_new_uid_is_not_uuid_shaped():
+    # The host ignores devicePresent for UUID-shaped uids (32-hex substring), so the
+    # generated uid must not look like a UUID.
+    for _ in range(20):
+        uid = new_uid()
+        assert uid.startswith("homeassistant-")
+        assert not re.search(r"[0-9a-fA-F]{32}", uid)
+
+
+def test_client_defaults_to_non_uuid_uid():
+    client = SavantClient("10.0.0.5", 12345)
+    assert client._uid.startswith("homeassistant-")
+    assert not re.search(r"[0-9a-fA-F]{32}", client._uid)
 
 
 def test_handle_frame_decodes_gzipped_state_update():

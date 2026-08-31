@@ -9,7 +9,6 @@ materialize new entities the first time a matching state key appears.
 from __future__ import annotations
 
 import asyncio
-import uuid
 from collections import defaultdict
 from collections.abc import Callable
 from contextlib import suppress
@@ -34,6 +33,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     build_default_subscribe_keys,
+    new_uid,
     room_from_state_key,
     room_state_keys,
 )
@@ -65,7 +65,7 @@ class SavantHub:
 
         data = dict(entry.data)
         options = dict(entry.options or {})
-        self.uid = data.get("uid") or uuid.uuid4().hex
+        self.uid = data.get("uid") or new_uid()
         # The approved device list from the config-flow picker (None for legacy entries
         # that predate the picker — platforms then fall back to dynamic discovery).
         self.devices: list[dict[str, str]] | None = data.get(CONF_DEVICES)

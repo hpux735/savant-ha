@@ -9,10 +9,25 @@ where it was observed.
 from __future__ import annotations
 
 import logging
+import uuid
 
 DOMAIN = "savant_ha"
 
 LOGGER = logging.getLogger(__package__)
+
+
+def new_uid() -> str:
+    """Generate a client device UID.
+
+    The host ignores ``devicePresent`` when the client ``uid`` is UUID-shaped (i.e.
+    contains a 32-hex-character substring such as ``uuid4().hex``) — it treats such a
+    uid as a returning device and waits for a ``hostToken`` instead of answering
+    ``deviceRecognized``.  A clearly non-UUID uid (a prefix plus a short hex suffix) is
+    accepted as a fresh device (verified live against the host).  ``uid`` is otherwise
+    unvalidated (PROTOCOL.md §4.9).
+    """
+    return "homeassistant-" + uuid.uuid4().hex[:16]
+
 
 # ---- Config flow fields ---------------------------------------------------
 CONF_HOST = "host"  # <HOST_IP> — user-supplied
