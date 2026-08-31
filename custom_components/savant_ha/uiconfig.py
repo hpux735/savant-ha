@@ -155,131 +155,125 @@ def _pick(cols: list[str], candidates: tuple[str, ...]) -> str | None:
 
 
 def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
-    # roomID -> name
+    # PROTOCOL.md §13.1/§13.2: every table uses ``id INTEGER PRIMARY KEY``; the
+    # ``zoneID``/``roomID`` columns are integer references to the named table's ``id``.
+    # Rooms.id (int) -> name
     rooms: dict[Any, str] = {}
-    room_cols = _table_columns(conn, "Rooms")
-    if room_cols:
-        id_col = _pick(room_cols, ("roomID", "roomId", "id"))
-        name_col = _pick(room_cols, ("name",))
-        if id_col and name_col:
-            for row in conn.execute(f'SELECT "{id_col}", "{name_col}" FROM Rooms'):
-                rooms[row[0]] = str(row[1])
+    for row in conn.execute("SELECT id, name FROM Rooms"):
+        rooms[row[0]] = str(row[1] or "")
 
-    # zoneID -> roomID
+    # ZoneRoomMap: zoneID (int) -> roomID (int)
     zone_room: dict[Any, Any] = {}
-    zrm_cols = _table_columns(conn, "ZoneRoomMap")
-    if zrm_cols:
-        z_col = _pick(zrm_cols, ("zoneID", "zoneId", "zone_id"))
-        r_col = _pick(zrm_cols, ("roomID", "roomId", "room_id"))
-        if z_col and r_col:
-            for row in conn.execute(f'SELECT "{z_col}", "{r_col}" FROM ZoneRoomMap'):
-                zone_room[row[0]] = row[1]
+    for row in conn.execute("SELECT zoneID, roomID FROM ZoneRoomMap"):
+        zone_room[row[0]] = row[1]
 
-    # zoneID -> zone name
-    zone_name: dict[Any, str] = {}
-    zone_cols = _table_columns(conn, "Zones")
-    if zone_cols:
-        zid_col = _pick(zone_cols, ("zoneID", "zoneId", "id"))
-        zname_col = _pick(zone_cols, ("name",))
-        if zid_col and zname_col:
-            for row in conn.execute(f'SELECT "{zid_col}", "{zname_col}" FROM Zones'):
-                zone_name[row[0]] = str(row[1])
+    # Zones.id (int) -> (name, type, serviceID, logicalComponent)
+    zones: dict[Any, tuple[str, str, str, str]] = {}
+    for row in conn.execute(
+        "SELECT id, name, type, serviceID, logicalComponent FROM Zones"
+    ):
+        zones[row[0]] = (
+            str(row[1] or ""),
+            str(row[2] or ""),
+            str(row[3] or ""),
+            str(row[4] or ""),
+        )
 
     tables = [
         r[0]
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     ]
 
-    # DEBUG: dump the entity-table schema so the column heuristics can be verified
-    # against the real host (the schema is host-specific and undocumented in detail).
     entity_tables = [t for t in tables if t.endswith("Entities")]
     LOGGER.debug(
         "Savant uiconfig entity tables: %s",
         {t: _table_columns(conn, t) for t in sorted(entity_tables)},
     )
 
+    def _room_for(zone_id: Any) -> str:
+        room_id = zone_room.get(zone_id)
+        room = rooms.get(room_id, "")
+        if room:
+            return room
+        zone_name = zones.get(zone_id, ("", "", "", ""))[0]
+        return zone_name.split("-", 1)[0].strip() if zone_name else ""
+
     devices: list[SavantDevice] = []
     for table in sorted(tables):
-        device_type = None
-        for prefix, dtype in _ENTITY_TABLE_TYPES.items():
-            if table.endswith("Entities") and table.startswith(prefix):
-                device_type = dtype
-                break
+        device_type = _type_for(table)
         if device_type is None:
             continue
-
         cols = _table_columns(conn, table)
         if not cols:
             continue
         name_col = _pick(cols, ("name",))
-        addr_col = _pick(cols, ("addresses", "address"))
-        state_col = _pick(cols, ("stateName", "state_name", "state"))
+        addr_col = _pick(cols, ("addresses",))
+        state_col = _pick(cols, ("stateName", "state_name"))
         zone_col = _pick(cols, ("zoneID", "zoneId", "zone_id"))
-        room_col = _pick(cols, ("roomID", "roomId", "room_id"))
-        id_col = _pick(cols, ("entityID", "entityId", "id", "uuid", "UID"))
 
-        select = ", ".join(f'"{c}"' for c in cols)
-        cursor = conn.execute(f"SELECT {select} FROM {table}")
+        cursor = conn.execute(f'SELECT * FROM "{table}"')
         for row in cursor:
             d = _row_to_dict(cursor, row)
             name = str(d.get(name_col) or "") if name_col else ""
-            room = ""
-            # direct room column
-            if room_col and d.get(room_col) is not None:
-                room = rooms.get(d[room_col], str(d[room_col]))
-            # via zone link
-            if not room and zone_col and d.get(zone_col) is not None:
-                room_id = zone_room.get(d[zone_col])
-                room = rooms.get(room_id, str(room_id or ""))
-            if not room and zone_col and d.get(zone_col) is not None:
-                zone = zone_name.get(d[zone_col], "")
-                if zone:
-                    room = zone.split("-", 1)[0].strip()
-
             if not name:
                 continue
-            entity_id = str(d.get(id_col) or "") if id_col else ""
+            zone_id = d.get(zone_col) if zone_col else None
             devices.append(
                 SavantDevice(
                     device_type=device_type,
                     name=name,
-                    room=room,
-                    entity_id=entity_id,
+                    room=_room_for(zone_id) if zone_id is not None else "",
+                    entity_id=f"{device_type}:{d.get('id')}",
                     addresses=str(d.get(addr_col) or "") if addr_col else "",
                     state_name=str(d.get(state_col) or "") if state_col else "",
-                    zone=zone_name.get(d.get(zone_col), "") if zone_col else "",
+                    zone=zones.get(zone_id, ("", "", "", ""))[0] if zone_id is not None else "",
                 )
             )
 
-    # AV / media zones are stored in the Zones table (type "User"), not an Entities
-    # table.  Expose them as media players.
-    if zone_cols:
-        zid_col = _pick(zone_cols, ("zoneID", "zoneId", "id"))
-        zname_col = _pick(zone_cols, ("name",))
-        ztype_col = _pick(zone_cols, ("type", "zoneType", "zone_type"))
-        zsvc_col = _pick(zone_cols, ("serviceID", "serviceId", "service_id"))
-        select = ", ".join(f'"{c}"' for c in zone_cols)
-        cursor = conn.execute(f"SELECT {select} FROM Zones")
-        for row in cursor:
-            d = _row_to_dict(cursor, row)
-            if ztype_col and d.get(ztype_col) not in (None, "User"):
-                continue
-            zone_id = d.get(zid_col)
-            name = str(d.get(zname_col) or "") if zname_col else ""
-            if not name:
-                continue
-            room_id = zone_room.get(zone_id)
-            room = rooms.get(room_id, str(room_id or ""))
-            service = str(d.get(zsvc_col) or "") if zsvc_col else ""
-            devices.append(
-                SavantDevice(
-                    device_type="media_player",
-                    name=name,
-                    room=room,
-                    entity_id=str(zone_id or ""),
-                    zone=name,
-                    extra={"service_id": service},
-                )
-            )
-
+    _parse_media_zones(conn, tables, devices)
     return devices
+
+
+def _type_for(table: str) -> str | None:
+    for prefix, dtype in _ENTITY_TABLE_TYPES.items():
+        if table.endswith("Entities") and table.startswith(prefix):
+            return dtype
+    return None
+
+
+def _parse_media_zones(
+    conn: sqlite3.Connection, tables: list[str], devices: list[SavantDevice]
+) -> None:
+    # Media/AV endpoints live in the master "zoned service" list (PROTOCOL.md §13.1c),
+    # one row per <zone>-<component>-<logicalComponent>-<variantID>-<serviceType>.
+    sir = "ServiceImplementationServiceResources"
+    if sir not in tables:
+        return
+    cols = _table_columns(conn, sir)
+    svc_col = _pick(cols, ("serviceType", "service_type"))
+    zone_col = _pick(cols, ("zone",))
+    lc_col = _pick(cols, ("logicalComponent", "logical_component"))
+    alias_col = _pick(cols, ("serviceNameAlias", "service_name_alias"))
+    if svc_col is None:
+        return
+    cursor = conn.execute(f'SELECT * FROM "{sir}"')
+    for row in cursor:
+        d = _row_to_dict(cursor, row)
+        service_type = str(d.get(svc_col) or "")
+        if "SVC_AV" not in service_type:
+            continue
+        zone = str(d.get(zone_col) or "")
+        logical = str(d.get(lc_col) or "")
+        name = str(d.get(alias_col) or "") or logical or zone
+        if not name:
+            continue
+        devices.append(
+            SavantDevice(
+                device_type="media_player",
+                name=name,
+                room=zone,
+                entity_id=f"media_player:{d.get('id')}",
+                zone=logical,
+                extra={"service_id": service_type},
+            )
+        )

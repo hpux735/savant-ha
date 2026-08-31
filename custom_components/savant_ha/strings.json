@@ -19,10 +19,9 @@
       },
       "devices": {
         "title": "Savant devices found",
-        "description": "{count} device(s) found on {host}. Choose which to import and set the area for each. You can move them later in Home Assistant.",
+        "description": "{count} device(s) found on {host}. Choose which to import. Each device is placed in its configured room as an area — you can move them later in Home Assistant.",
         "data": {
-          "include_0": "Import",
-          "area_0": "Area"
+          "devices": "Devices to import"
         }
       }
     },

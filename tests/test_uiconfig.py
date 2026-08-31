@@ -12,25 +12,40 @@ from custom_components.savant_ha import uiconfig
 
 def _make_sqlite_bytes() -> bytes:
     conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE Rooms (roomID TEXT, name TEXT)")
-    conn.execute("CREATE TABLE Zones (zoneID TEXT, name TEXT, type TEXT)")
-    conn.execute("CREATE TABLE ZoneRoomMap (zoneID TEXT, roomID TEXT)")
+    conn.execute("CREATE TABLE Rooms (id INTEGER PRIMARY KEY, name TEXT, roomID TEXT)")
     conn.execute(
-        "CREATE TABLE LightEntities (entityID TEXT, name TEXT, addresses TEXT,"
-        " stateName TEXT, zoneID TEXT)"
+        "CREATE TABLE Zones (id INTEGER PRIMARY KEY, name TEXT, type TEXT,"
+        " serviceID TEXT, logicalComponent TEXT)"
     )
-    conn.execute("CREATE TABLE HVACEntities (entityID TEXT, name TEXT, zoneID TEXT)")
-    conn.execute("INSERT INTO Rooms VALUES ('r1','Kitchen'),('r2','Living Room')")
+    conn.execute("CREATE TABLE ZoneRoomMap (zoneID INTEGER, roomID INTEGER)")
     conn.execute(
-        "INSERT INTO Zones VALUES ('z1','Kitchen-Recessed','User'),"
-        "('z2','Living Room-Lamp','User')"
+        "CREATE TABLE LightEntities (id INTEGER PRIMARY KEY, name TEXT, addresses TEXT,"
+        " stateName TEXT, zoneID INTEGER)"
     )
-    conn.execute("INSERT INTO ZoneRoomMap VALUES ('z1','r1'),('z2','r2')")
     conn.execute(
-        "INSERT INTO LightEntities VALUES ('l1','Kitchen Recessed','002,1,(null)',"
-        "'Proj.Host.CurrentDimmerLevel_1_002','z1')"
+        "CREATE TABLE HVACEntities (id INTEGER PRIMARY KEY, name TEXT, zoneID INTEGER)"
     )
-    conn.execute("INSERT INTO HVACEntities VALUES ('h1','Main Thermostat','z1')")
+    conn.execute(
+        "CREATE TABLE ServiceImplementationServiceResources"
+        " (id INTEGER PRIMARY KEY, zone TEXT, component TEXT, logicalComponent TEXT,"
+        " serviceType TEXT, serviceNameAlias TEXT)"
+    )
+    conn.execute("INSERT INTO Rooms VALUES (1,'Kitchen','r1'),(2,'Living Room','r2')")
+    conn.execute(
+        "INSERT INTO Zones VALUES (10,'Kitchen-Recessed','Environmental',"
+        "'SVC_ENV_LIGHTING','Host'),(11,'Kitchen-Music','Environmental',"
+        "'SVC_AV_SAVANTMUSIC','Music')"
+    )
+    conn.execute("INSERT INTO ZoneRoomMap VALUES (10,1),(11,1)")
+    conn.execute(
+        "INSERT INTO LightEntities VALUES (1,'Kitchen Recessed','002,1,(null)',"
+        "'Proj.Host.CurrentDimmerLevel_1_002',10)"
+    )
+    conn.execute("INSERT INTO HVACEntities VALUES (1,'Main Thermostat',10)")
+    conn.execute(
+        "INSERT INTO ServiceImplementationServiceResources VALUES"
+        " (1,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Kitchen Music')"
+    )
     data = conn.serialize()
     conn.close()
     return data
@@ -73,17 +88,22 @@ def test_reassemble_and_parse_devices():
     by_type = {d.device_type for d in devices}
     assert "light" in by_type
     assert "climate" in by_type
+    assert "media_player" in by_type
 
     light = next(d for d in devices if d.device_type == "light")
     assert light.name == "Kitchen Recessed"
     assert light.room == "Kitchen"
     assert light.addresses == "002,1,(null)"
     assert light.state_name == "Proj.Host.CurrentDimmerLevel_1_002"
-    assert light.entity_id == "l1"
+    assert light.entity_id == "light:1"
 
     climate = next(d for d in devices if d.device_type == "climate")
     assert climate.name == "Main Thermostat"
     assert climate.room == "Kitchen"
+
+    media = next(d for d in devices if d.device_type == "media_player")
+    assert media.room == "Kitchen"
+    assert media.zone == "Audio Zone 1"
 
 
 def test_reassemble_ignores_non_archive_frames():

@@ -182,6 +182,26 @@ keys are then registered.
 
 ### 5.4 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
 
+## 5b. Config archive (authoritative device inventory)
+
+The complete room/load/device inventory is **downloaded**, not pushed: `session/fileDownload
+{filePath:"uiconfig.tar.gz"}` returns a framed gzip archive (binary WS frames, not msgpack)
+whose `serviceImplementation.sqlite` holds the full model. The sibling repo's
+`PROTOCOL.md` §13.1 documents the complete 39-table schema and §13.2 the relationships.
+Key facts for this integration:
+
+- Every table uses `id INTEGER PRIMARY KEY`; `zoneID`/`roomID` are **integer** references
+  to the named table's `id` (no foreign keys — by convention).
+- Join chain for a device: `*Entities.zoneID` → `Zones.id` (an `Environmental` zone) →
+  `ZoneRoomMap.zoneID` → `roomID` → `Rooms.id` → `name`.
+- `*Entities` tables (`LightEntities`, `ShadeEntities`, `FanEntities`, `HVACEntities`,
+  `DoorLockEntities`, `GarageEntities`, …) each hold one device class, with `name`,
+  `addresses` (comma-separated load addresses, `(null)`-padded), and `stateName` (the
+  dotted state key to subscribe to).
+- Media/AV endpoints live in the master zoned-service list
+  `ServiceImplementationServiceResources` (`serviceType` contains `SVC_AV`), not an
+  Entities table.
+
 ## 6. Device control — `service/request`
 
 Each message:

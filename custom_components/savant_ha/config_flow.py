@@ -115,21 +115,26 @@ def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, str]]:
     return devices
 
 
+def _device_label(device: dict[str, str]) -> str:
+    label = f"{device.get('type', '')} · {device['name']}"
+    if device.get("room"):
+        label += f" · {device['room']}"
+    return label
+
+
 def _devices_schema(devices: list[dict[str, str]]) -> vol.Schema:
-    fields: dict[Any, Any] = {}
-    for index, device in enumerate(devices):
-        desc = f"{device.get('type', '')} · {device['name']}"
-        if device.get("room"):
-            desc += f" · {device['room']}"
-        fields[vol.Optional(f"include_{index}", default=True, description=desc)] = bool
-        fields[
-            vol.Optional(
-                f"area_{index}",
-                default=device.get("area", ""),
-                description=desc,
+    # A multi-select of device names (proper labels), defaulting to all selected.  The
+    # device's area is its room from the config archive (looked up, not typed).
+    options = [
+        {"value": device["id"], "label": _device_label(device)} for device in devices
+    ]
+    return vol.Schema(
+        {
+            vol.Required("devices", default=[d["id"] for d in devices]): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=options, multiple=True)
             )
-        ] = str
-    return vol.Schema(fields)
+        }
+    )
 
 
 class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -237,13 +242,10 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         if user_input is not None:
-            approved: list[dict[str, str]] = []
-            for index, device in enumerate(self._devices):
-                if not user_input.get(f"include_{index}", True):
-                    continue
-                entry = dict(device)
-                entry["area"] = user_input.get(f"area_{index}", "") or ""
-                approved.append(entry)
+            selected = set(user_input.get("devices", []))
+            # area is the device's room, looked up from the config archive; it becomes
+            # the HA area via the entity's suggested_area.
+            approved = [dict(d) for d in self._devices if d["id"] in selected]
 
             await self.async_set_unique_id(self._host)
             self._abort_if_unique_id_configured()
