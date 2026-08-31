@@ -29,7 +29,7 @@ from typing import Any
 
 import aiohttp
 import msgpack
-from aiohttp import WSMsgType
+from aiohttp import WSMsgType, hdrs
 
 from .const import (
     DASHBOARD_REQUEST_SCENES,
@@ -96,6 +96,21 @@ def _redact(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_redact(v) for v in obj]
     return obj
+
+
+def _log_tls_info(ws: aiohttp.ClientWebSocketResponse) -> None:
+    """Log the negotiated TLS version/cipher for diagnostics."""
+    try:
+        ssl_object = ws._writer.transport.get_extra_info("ssl_object")  # noqa: SLF001
+    except (AttributeError, RuntimeError):
+        return
+    if ssl_object is not None:
+        try:
+            LOGGER.info(
+                "Savant TLS version=%s cipher=%s", ssl_object.version(), ssl_object.cipher()
+            )
+        except (AttributeError, ValueError):
+            pass
 
 
 class SavantError(Exception):
@@ -507,7 +522,13 @@ class SavantClient:
         return ctx
 
     async def _connect(self) -> None:
-        self._session = aiohttp.ClientSession()
+        # Match the observed upgrade request exactly (PROTOCOL.md §4.3): the app sends
+        # only Host/Upgrade/Connection/Sec-WebSocket-* + Origin, with no User-Agent /
+        # Accept / Accept-Encoding.  Strip aiohttp's auto headers so the host sees the
+        # same minimal request the working reference client sends.
+        self._session = aiohttp.ClientSession(
+            skip_auto_headers={hdrs.USER_AGENT, hdrs.ACCEPT, hdrs.ACCEPT_ENCODING}
+        )
         url = f"wss://{self._host}:{self._port}/"
         self._ws = await self._session.ws_connect(
             url,
@@ -518,6 +539,7 @@ class SavantClient:
             origin=f"wss://{self._host}:{self._port}",
             receive_timeout=15.0,
         )
+        _log_tls_info(self._ws)
         LOGGER.info(
             "Savant WS connected to %s:%s (subprotocol=%s)",
             self._host,
