@@ -15,6 +15,7 @@ from custom_components.savant_ha.const import (
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
     ENVELOPE_KEY_USER,
+    SVC_ENV_HVAC,
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
@@ -74,6 +75,10 @@ def test_new_uid_is_not_uuid_shaped():
         uid = new_uid()
         assert uid.startswith("homeassistant-")
         assert not re.search(r"[0-9a-fA-F]{32}", uid)
+
+
+def test_hvac_service_type_is_available_to_platforms():
+    assert SVC_ENV_HVAC == "SVC_ENV_HVAC"
 
 
 def test_client_defaults_to_non_uuid_uid():

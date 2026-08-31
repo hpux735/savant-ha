@@ -45,3 +45,5 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788207984000,2026-08-31T20:26:24.000000Z,ses_savant_ha2_000,Set House cool-only target,"Looks good.  now try setting it to cool and 74"
 1788208028000,2026-08-31T20:27:08.000000Z,ses_savant_ha2_000,Set House auto range,"Looks right.  Now set it to auto with the same endpoints"
 1788208097000,2026-08-31T20:28:17.000000Z,ses_savant_ha2_000,Commit and push tested controls,"perfect.  Let's get it all buttoned-up and commit and push"
+1788208425000,2026-08-31T20:33:45.000000Z,ses_savant_ha2_000,Fix missing HVAC service constant,"User pasted a Home Assistant setup log. Local auth and uiconfig download succeeded, then platform setup failed with ImportError: cannot import name 'SVC_ENV_HVAC' from custom_components.savant_ha.const. Host/device IDs, room names, scene IDs, host metadata, and credentials redacted."
+1788208500000,2026-08-31T20:35:00.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"
