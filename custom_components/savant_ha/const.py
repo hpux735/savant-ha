@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Any
 
 DOMAIN = "savant_ha"
 
@@ -105,19 +106,15 @@ VERB_HVAC_MODE_AUTO = "SetHVACModeAuto"
 VERB_HVAC_MODE_COOL = "SetHVACModeCool"
 VERB_HVAC_MODE_HEAT = "SetHVACModeHeat"
 VERB_HVAC_MODE_OFF = "SetHVACModeOff"
+VERB_FAN_MODE_AUTO = "SetFanModeAuto"
+VERB_FAN_MODE_CYCLE = "SetFanModeCycle"
 VERB_FAN_MODE_ON = "SetFanModeOn"
 
 # ---- Component/service-type scopes (PROTOCOL.md §6) -----------------------
-SCOPE_HVAC = {
-    "component": "HVAC Controller",
-    "serviceType": "SVC_ENV_HVAC",
-    "logicalComponent": "HVAC_controller",
-    "variantID": "1",
-    "zone": "",
-}
 SVC_AV_SAVANTMUSIC = "SVC_AV_SAVANTMUSIC"
 SVC_AV_GENERALAUDIO = "SVC_AV_GENERALAUDIO"
 SVC_ENV_LIGHTING = "SVC_ENV_LIGHTING"
+SVC_ENV_SHADE = "SVC_ENV_SHADE"
 
 # ---- State-key prefixes / attributes (PROTOCOL.md §5) ---------------------
 HVAC_STATE_PREFIX = "HVAC Controller.HVAC_controller."
@@ -196,6 +193,7 @@ HVAC_STATE_ATTRIBUTES = (
     "ThermostatCurrentSetPoint",
     "ThermostatCurrentHumidity",
     "ThermostatCurrentHumiditySetPoint",
+    "ThermostatCurrentRemoteTemperature",
     "ThermostatMode",
     "ThermostatHVACState",
     "ThermostatFanMode",
@@ -275,6 +273,23 @@ def audio_zone_state_keys(component: str, logical_component: str) -> list[str]:
     """
     prefix = f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
     return [f"{prefix}{attr}" for attr in MUSIC_ZONE_ATTRIBUTES]
+
+
+def device_state_keys(device: dict[str, Any]) -> list[str]:
+    """Return state keys for an archive-derived device record.
+
+    ``stateName`` identifies the exact state key for loads. For thermostats it names
+    only the current-temperature key, so derive the rest of that controller unit's
+    observed attributes from the same component/logical-component prefix and suffix.
+    """
+    state_name = str(device.get("state_name") or "")
+    marker = "ThermostatCurrentTemperature"
+    if not state_name:
+        return []
+    if device.get("type") != DEVICE_TYPE_CLIMATE or marker not in state_name:
+        return [state_name]
+    prefix, suffix = state_name.split(marker, 1)
+    return [f"{prefix}{attribute}{suffix}" for attribute in HVAC_STATE_ATTRIBUTES]
 
 
 # ---- Defaults --------------------------------------------------------------

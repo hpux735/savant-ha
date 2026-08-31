@@ -19,6 +19,7 @@ from custom_components.savant_ha.const import (
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
     build_default_subscribe_keys,
+    device_state_keys,
     new_uid,
     room_from_state_key,
     room_state_keys,
@@ -166,6 +167,23 @@ def test_subscribe_keys_include_every_category():
     assert "global.CurrentTemperature" in keys
     assert "Living Room.RoomLightsAreOn" in keys
     assert "Living Room.RoomCurrentTemperature" in keys
+
+
+def test_device_state_keys_uses_archive_state_name_and_hvac_scope():
+    assert device_state_keys(
+        {"type": "light", "state_name": "Savant.Lighting.CurrentDimmerLevel_1_00C"}
+    ) == ["Savant.Lighting.CurrentDimmerLevel_1_00C"]
+
+    keys = device_state_keys(
+        {
+            "type": "climate",
+            "state_name": "New Thermostat.HVAC_controller.ThermostatCurrentTemperature_2",
+        }
+    )
+    assert "New Thermostat.HVAC_controller.ThermostatCurrentTemperature_2" in keys
+    assert "New Thermostat.HVAC_controller.ThermostatCurrentCoolPoint_2" in keys
+    assert "New Thermostat.HVAC_controller.IsCurrentHVACModeHeat_2" in keys
+    assert "New Thermostat.HVAC_controller.ThermostatCurrentRemoteTemperature_2" in keys
 
 
 def test_local_login_uses_user_password_form():

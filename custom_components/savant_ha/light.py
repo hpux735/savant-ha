@@ -38,7 +38,7 @@ class SavantLight(SavantEntity, LightEntity):
 
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(self, hub: SavantHub, device: dict[str, str]) -> None:
+    def __init__(self, hub: SavantHub, device: dict[str, Any]) -> None:
         super().__init__(
             hub,
             device_key=f"light:{device['id']}",
@@ -48,8 +48,15 @@ class SavantLight(SavantEntity, LightEntity):
         self._room = device.get("room", "")
         self._state_name = device.get("state_name", "")
         self._addresses = _split_addresses(device.get("addresses", ""))
+        control = device.get("control", {})
+        self._control = control if isinstance(control, dict) else {}
+        self._is_switch = self._control.get("entity_type") == "Switch"
+        if self._is_switch:
+            self._attr_supported_color_modes = {ColorMode.ONOFF}
+            self._attr_color_mode = ColorMode.ONOFF
         self._attr_unique_id = f"{hub.uid}_light_{device['id']}"
-        self._attr_color_mode = ColorMode.BRIGHTNESS
+        if not self._is_switch:
+            self._attr_color_mode = ColorMode.BRIGHTNESS
 
     def _component(self) -> str:
         # Per-load: derive component/logical from stateName "<component>.<logical>...".
@@ -64,15 +71,34 @@ class SavantLight(SavantEntity, LightEntity):
             return parts[1] if len(parts) > 1 else ""
         return ""
 
-    def _dimmer_args(self, level: int) -> dict[str, Any]:
-        args: dict[str, Any] = {"DimmerLevel": level, "useLastDimmerValue": False}
+    def _address_args(self) -> dict[str, Any]:
+        args: dict[str, Any] = {}
         for index, value in enumerate(self._addresses[:6], start=1):
             args[f"Address{index}"] = value
         for index in range(len(self._addresses) + 1, 7):
             args[f"Address{index}"] = "(null)"
         args.setdefault("Address1", "(null)")
-        args["FadeTime"] = "0.5"
-        args["Curve"] = "Custom 1"
+        return args
+
+    def _dimmer_args(self, level: int) -> dict[str, Any]:
+        args = self._address_args()
+        args["DimmerLevel"] = level
+        fade_time = self._control.get("fade_time")
+        delay_time = self._control.get("delay_time")
+        args["FadeTime"] = fade_time if fade_time is not None else "0.5"
+        args["DelayTime"] = delay_time if delay_time is not None else "0"
+        # These flat keys are required by the archive's DimmerSet request definition,
+        # including for ordinary dimmers where they are ignored.
+        args.update(
+            {
+                "bleColorRed": 0,
+                "bleColorGreen": 0,
+                "bleColorBlue": 0,
+                "bleColorWhite": 0,
+                "kelvin": 0,
+            }
+        )
+        args["Curve"] = self._control.get("technology") or "Custom 1"
         return args
 
     @property
@@ -85,6 +111,8 @@ class SavantLight(SavantEntity, LightEntity):
 
     @property
     def brightness(self) -> int | None:
+        if self._is_switch:
+            return None
         if self._state_name:
             level = self._state(self._state_name)
             if isinstance(level, (int, float)):
@@ -95,11 +123,21 @@ class SavantLight(SavantEntity, LightEntity):
         return 255 if self.is_on else 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        if self._is_switch:
+            await self._service_request(
+                "SwitchOn",
+                component=self._component(),
+                service_type=SVC_ENV_LIGHTING,
+                zone=self._room,
+                logical_component=self._logical_component(),
+                request_args=self._address_args(),
+            )
+            return
         if self._state_name and self._addresses:
             brightness = kwargs.get("brightness")
             level = round(brightness / 255 * 100) if isinstance(brightness, int) else 100
             await self._service_request(
-                VERB_DIMMER_SET,
+                self._control.get("dimmer_command") or VERB_DIMMER_SET,
                 component=self._component(),
                 service_type=SVC_ENV_LIGHTING,
                 zone=self._room,
@@ -112,13 +150,23 @@ class SavantLight(SavantEntity, LightEntity):
             component=self._component(),
             service_type=SVC_ENV_LIGHTING,
             zone=self._room,
-            request_args={"BrightnessLevel": 100, "useLastDimmerValue": True},
+            request_args={"BrightnessLevel": 100},
         )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        if self._is_switch:
+            await self._service_request(
+                "SwitchOff",
+                component=self._component(),
+                service_type=SVC_ENV_LIGHTING,
+                zone=self._room,
+                logical_component=self._logical_component(),
+                request_args=self._address_args(),
+            )
+            return
         if self._state_name and self._addresses:
             await self._service_request(
-                VERB_DIMMER_SET,
+                self._control.get("dimmer_command") or VERB_DIMMER_SET,
                 component=self._component(),
                 service_type=SVC_ENV_LIGHTING,
                 zone=self._room,
@@ -131,7 +179,7 @@ class SavantLight(SavantEntity, LightEntity):
             component=self._component(),
             service_type=SVC_ENV_LIGHTING,
             zone=self._room,
-            request_args={"BrightnessLevel": 0, "useLastDimmerValue": True},
+            request_args={"BrightnessLevel": 0},
         )
 
 

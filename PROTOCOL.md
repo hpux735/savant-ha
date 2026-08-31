@@ -218,14 +218,15 @@ Observed verbs used by this integration:
 |---|---|---|
 | `SetVolume` | AV | `{VolumeValue:<0-100>}` (component `Music`/`Optical Input`/`RCA Inputs`, `SVC_AV_SAVANTMUSIC`/`SVC_AV_GENERALAUDIO`) |
 | `PowerOn` | AV | none (component `Music`, `SVC_AV_SAVANTMUSIC`) |
-| `__RoomSetBrightness` | lighting | `{BrightnessLevel:<0|100>, useLastDimmerValue:true}` |
-| `DimmerSet` | lighting | `{Address1..6, DimmerLevel, FadeTime, DelayTime, Curve, useLastDimmerValue, bleColor{red,green,blue,white,kelvin}}` (`SVC_ENV_LIGHTING`) |
-| `SetCoolPointTemperature` / `SetHeatPointTemperature` | HVAC | `{ThermostatAddress:"1", CoolPointTemperature|HeatPointTemperature:<F°>}` |
-| `SetHVACModeAuto` / `SetHVACModeCool` / `SetHVACModeHeat` / `SetHVACModeOff` | HVAC | `{ThermostatAddress:"1"}` |
-| `SetFanModeOn` | HVAC | `{ThermostatAddress:"1"}` |
+| `__RoomSetBrightness` | lighting | `{BrightnessLevel:<0|100>}` |
+| `DimmerSet` | lighting | `{Address1..6, DimmerLevel, FadeTime, DelayTime, Curve, bleColorRed, bleColorGreen, bleColorBlue, bleColorWhite, kelvin}` (`SVC_ENV_LIGHTING`) |
+| `SetCoolPointTemperature` / `SetHeatPointTemperature` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)", CoolPointTemperature|HeatPointTemperature:<F°>}` |
+| `SetHVACModeAuto` / `SetHVACModeCool` / `SetHVACModeHeat` / `SetHVACModeOff` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)"}` |
+| `SetFanModeAuto` / `SetFanModeCycle` / `SetFanModeOn` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)"}` |
+| `ShadeUp` / `ShadeDown` / `ShadeStop` | shade | `{Address1..5}` (`SVC_ENV_SHADE`; live-verified on an Office shade) |
 
-HVAC scope: `component:"HVAC Controller"`, `serviceType:"SVC_ENV_HVAC"`, `variantID:"1"`,
-`logicalComponent:"HVAC_controller"`, `zone:""`.
+HVAC scope is archive-derived: `component`/`logicalComponent` come from the entity's
+`stateName`, `serviceType:"SVC_ENV_HVAC"`, `variantID:"1"`, `zone:""`.
 
 ---
 
@@ -236,13 +237,14 @@ HVAC scope: `component:"HVAC Controller"`, `serviceType:"SVC_ENV_HVAC"`, `varian
 2. **`hostToken` persistence** — issued fresh per local login; whether it can be cached
    across sessions is unconfirmed (the integration re-logs-in with `{user, password}`
    each reconnect).
-3. Full verb list for **shades / fans / door-locks / garage** control (expected under
-   `service/request`, not yet captured) — shade/fan command verbs are NOT implemented
-   here; their state keys are observed but no set-verb is known.
+3. Full verb list for **fans / door-locks / garage** control (expected under
+   `service/request`, not yet captured). `ShadeUp`, `ShadeDown`, and `ShadeStop` are
+   archive-derived and live-verified; variable-shade position direction remains unknown.
 4. **Play / pause / mute / power-off** verbs for media transport are not in the observed
    catalog yet (only `PowerOn`/`SetVolume`); media player entities expose the *known*
    commands only.
-5. `state/update` delta vs. snapshot semantics; multi-frame (`fin=0`) gzip streaming.
+5. `state/update` is delta-only in the observed local session: registering a state key
+   did not return an initial snapshot. No read-current-state RPC has been observed.
 6. Scene trigger verb — `dis/dashboard/request` verbs (`CaptureScene`, `UpsertScene`,
    `RemoveScene`, `GetAVAutomationScenes`) are known but the "run scene" verb is not
    yet confirmed.
@@ -253,3 +255,5 @@ HVAC scope: `component:"HVAC Controller"`, `serviceType:"SVC_ENV_HVAC"`, `varian
 8. Temperature scale is observable via `SchedulerSettings.TemperatureScale`
    (`"Fahrenheit"`|`"Celsius"`); the integration currently assumes Fahrenheit instead of
    reading it.
+9. ShadeLevel direction — the archive names a variable shade state `ShadeLevel`, but the
+   observed wire data has not established whether `0` is closed and `100` is open.

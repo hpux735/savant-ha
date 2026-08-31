@@ -92,6 +92,7 @@ def _devices_from_info(info: SavantDeviceInfo) -> list[dict[str, Any]]:
                 "state_name": dev.state_name,
                 "zone": dev.zone,
                 "component": dev.component,
+                "control": dev.extra,
             }
         )
     if devices:

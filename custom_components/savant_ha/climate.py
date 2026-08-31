@@ -23,7 +23,10 @@ from .const import (
     DEVICE_TYPE_CLIMATE,
     DOMAIN,
     HVAC_STATE_PREFIX,
-    SCOPE_HVAC,
+    SVC_ENV_HVAC,
+    VERB_FAN_MODE_AUTO,
+    VERB_FAN_MODE_CYCLE,
+    VERB_FAN_MODE_ON,
     VERB_HVAC_MODE_AUTO,
     VERB_HVAC_MODE_COOL,
     VERB_HVAC_MODE_HEAT,
@@ -40,6 +43,13 @@ _HEAT_POINT_ATTR = "ThermostatCurrentHeatPoint"
 _COOL_POINT_ATTR = "ThermostatCurrentCoolPoint"
 _SET_POINT_ATTR = "ThermostatCurrentSetPoint"
 _HUMIDITY_ATTR = "ThermostatCurrentHumidity"
+_REMOTE_TEMP_ATTR = "ThermostatCurrentRemoteTemperature"
+_TARGET_TEMP_LOW = "target_temp_low"
+_TARGET_TEMP_HIGH = "target_temp_high"
+
+_FAN_MODE_AUTO = "auto"
+_FAN_MODE_CYCLE = "cycle"
+_FAN_MODE_ON = "on"
 
 _MODE_FLAGS = {
     HVACMode.OFF: "IsCurrentHVACModeOff",
@@ -55,6 +65,12 @@ _MODE_VERBS = {
     HVACMode.AUTO: VERB_HVAC_MODE_AUTO,
 }
 
+_FAN_MODE_VERBS = {
+    _FAN_MODE_AUTO: VERB_FAN_MODE_AUTO,
+    _FAN_MODE_CYCLE: VERB_FAN_MODE_CYCLE,
+    _FAN_MODE_ON: VERB_FAN_MODE_ON,
+}
+
 
 def _suffix_address(suffix: str) -> str:
     # ``_1`` -> ``"1"`` (PROTOCOL.md §6: ThermostatAddress is a string index).
@@ -68,8 +84,13 @@ class SavantClimate(SavantEntity, ClimateEntity):
     # ``SchedulerSettings`` record (TemperatureScale:"Fahrenheit"); not otherwise
     # confirmed on the wire (PROTOCOL.md §5.4).
     _attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
-    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+        | ClimateEntityFeature.FAN_MODE
+    )
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
+    _attr_fan_modes = [_FAN_MODE_AUTO, _FAN_MODE_CYCLE, _FAN_MODE_ON]
     _attr_min_temp = 50
     _attr_max_temp = 90
     _attr_target_temperature_step = 1.0
@@ -81,13 +102,42 @@ class SavantClimate(SavantEntity, ClimateEntity):
             device_name=device["name"],
             area=device.get("area", ""),
         )
-        self._suffix = suffix
+        state_name = device.get("state_name", "")
+        marker = _TEMP_ATTR
+        if marker in state_name:
+            self._state_prefix, self._suffix = state_name.split(marker, 1)
+        else:
+            self._state_prefix = HVAC_STATE_PREFIX
+            self._suffix = suffix
+        parts = self._state_prefix.rstrip(".").split(".")
+        self._component = parts[0] if len(parts) >= 2 else "HVAC Controller"
+        self._logical_component = parts[1] if len(parts) >= 2 else "HVAC_controller"
+        addresses = str(device.get("addresses") or "").split(",")
+        self._thermostat_address = addresses[0].strip() or _suffix_address(self._suffix)
+        self._thermostat_address_2 = (
+            addresses[1].strip() if len(addresses) > 1 and addresses[1].strip() else "(null)"
+        )
         self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
 
     # ------------------------------------------------------------ state keys
 
     def _key(self, attr: str) -> str:
-        return f"{HVAC_STATE_PREFIX}{attr}{self._suffix}"
+        return f"{self._state_prefix}{attr}{self._suffix}"
+
+    def _scope(self) -> dict[str, str]:
+        return {
+            "component": self._component,
+            "service_type": SVC_ENV_HVAC,
+            "zone": "",
+            "logical_component": self._logical_component,
+            "variant_id": "1",
+        }
+
+    def _thermostat_args(self) -> dict[str, Any]:
+        return {
+            "ThermostatAddress": self._thermostat_address,
+            "ThermostatAddress2": self._thermostat_address_2,
+        }
 
     def _num(self, attr: str) -> float | None:
         value = self._state(self._key(attr))
@@ -107,6 +157,11 @@ class SavantClimate(SavantEntity, ClimateEntity):
         return self._num(_HUMIDITY_ATTR)
 
     @property
+    def extra_state_attributes(self) -> dict[str, float]:
+        remote_temperature = self._num(_REMOTE_TEMP_ATTR)
+        return {"remote_temperature": remote_temperature} if remote_temperature is not None else {}
+
+    @property
     def hvac_mode(self) -> HVACMode:
         for mode, flag in _MODE_FLAGS.items():
             if self._bool(flag):
@@ -116,37 +171,93 @@ class SavantClimate(SavantEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
+        if self.hvac_mode == HVACMode.AUTO:
+            return None
         if self.hvac_mode == HVACMode.COOL:
             return self._num(_COOL_POINT_ATTR)
         if self.hvac_mode == HVACMode.HEAT:
             return self._num(_HEAT_POINT_ATTR)
         return self._num(_SET_POINT_ATTR)
 
+    @property
+    def target_temperature_low(self) -> float | None:
+        return self._num(_HEAT_POINT_ATTR)
+
+    @property
+    def target_temperature_high(self) -> float | None:
+        return self._num(_COOL_POINT_ATTR)
+
+    @property
+    def fan_mode(self) -> str | None:
+        value = self._state(self._key("ThermostatFanMode"))
+        if isinstance(value, str) and value.lower() in _FAN_MODE_VERBS:
+            return value.lower()
+        for mode, flag in (
+            (_FAN_MODE_AUTO, "IsThermostatCurrentFanModeAuto"),
+            (_FAN_MODE_ON, "IsThermostatCurrentFanModeOn"),
+        ):
+            if self._bool(flag):
+                return mode
+        return None
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         verb = _MODE_VERBS.get(hvac_mode)
         if verb is None:
             return
         await self._service_request(
-            verb, request_args={"ThermostatAddress": _suffix_address(self._suffix)}, **SCOPE_HVAC
+            verb,
+            request_args=self._thermostat_args(),
+            **self._scope(),
         )
 
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
+        verb = _FAN_MODE_VERBS.get(fan_mode.lower())
+        if verb is not None:
+            await self._service_request(
+                verb,
+                request_args=self._thermostat_args(),
+                **self._scope(),
+            )
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
+        low = kwargs.get(_TARGET_TEMP_LOW)
+        high = kwargs.get(_TARGET_TEMP_HIGH)
+        if low is not None or high is not None:
+            if low is not None:
+                args = self._thermostat_args()
+                args["HeatPointTemperature"] = low
+                await self._service_request(
+                    VERB_SET_HEAT_POINT,
+                    request_args=args,
+                    **self._scope(),
+                )
+            if high is not None:
+                args = self._thermostat_args()
+                args["CoolPointTemperature"] = high
+                await self._service_request(
+                    VERB_SET_COOL_POINT,
+                    request_args=args,
+                    **self._scope(),
+                )
+            return
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
-        address = _suffix_address(self._suffix)
+        args = self._thermostat_args()
         mode = self.hvac_mode
         if mode == HVACMode.COOL:
+            args["CoolPointTemperature"] = temperature
             await self._service_request(
                 VERB_SET_COOL_POINT,
-                request_args={"ThermostatAddress": address, "CoolPointTemperature": temperature},
-                **SCOPE_HVAC,
+                request_args=args,
+                **self._scope(),
             )
         else:
+            args["HeatPointTemperature"] = temperature
             await self._service_request(
                 VERB_SET_HEAT_POINT,
-                request_args={"ThermostatAddress": address, "HeatPointTemperature": temperature},
-                **SCOPE_HVAC,
+                request_args=args,
+                **self._scope(),
             )
 
 

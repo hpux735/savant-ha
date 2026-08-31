@@ -222,6 +222,17 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
                     addresses=str(d.get(addr_col) or "") if addr_col else "",
                     state_name=str(d.get(state_col) or "") if state_col else "",
                     zone=zones.get(zone_id, ("", "", "", ""))[0] if zone_id is not None else "",
+                    extra=(
+                        {
+                            "entity_type": str(d.get(entity_type_col) or ""),
+                            "dimmer_command": str(d.get(_pick(cols, ("dimmerCommand",))) or ""),
+                            "fade_time": d.get(_pick(cols, ("fadeTime",))),
+                            "delay_time": d.get(_pick(cols, ("delayTime",))),
+                            "technology": str(d.get(_pick(cols, ("technology",))) or ""),
+                        }
+                        if device_type == "light"
+                        else {}
+                    ),
                 )
             )
 

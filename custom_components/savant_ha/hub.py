@@ -33,6 +33,7 @@ from .const import (
     LOGGER,
     audio_zone_state_keys,
     build_default_subscribe_keys,
+    device_state_keys,
     new_uid,
     room_from_state_key,
     room_state_keys,
@@ -80,6 +81,7 @@ class SavantHub:
         subscribe_keys = build_default_subscribe_keys(list(self.rooms))
         if self.devices is not None:
             for device in self.devices:
+                subscribe_keys.extend(device_state_keys(device))
                 if (
                     device.get("type") == "media_player"
                     and device.get("component")
