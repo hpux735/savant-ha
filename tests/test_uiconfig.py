@@ -20,7 +20,7 @@ def _make_sqlite_bytes() -> bytes:
     conn.execute("CREATE TABLE ZoneRoomMap (zoneID INTEGER, roomID INTEGER)")
     conn.execute(
         "CREATE TABLE LightEntities (id INTEGER PRIMARY KEY, name TEXT, addresses TEXT,"
-        " stateName TEXT, zoneID INTEGER)"
+        " stateName TEXT, zoneID INTEGER, entityType TEXT)"
     )
     conn.execute(
         "CREATE TABLE HVACEntities (id INTEGER PRIMARY KEY, name TEXT, zoneID INTEGER)"
@@ -40,8 +40,11 @@ def _make_sqlite_bytes() -> bytes:
     # than the last ZoneRoomMap row, must determine the imported device's area.
     conn.execute("INSERT INTO ZoneRoomMap VALUES (10,1),(11,1),(11,2)")
     conn.execute(
-        "INSERT INTO LightEntities VALUES (1,'Kitchen Recessed','002,1,(null)',"
-        "'Proj.Host.CurrentDimmerLevel_1_002',10)"
+        "INSERT INTO LightEntities VALUES"
+        " (1,'Kitchen Recessed','002,1,(null)',"
+        "'Proj.Host.CurrentDimmerLevel_1_002',10,'Dimmer'),"
+        " (2,'AUX B','002,2,(null)',"
+        "'Proj.Host.CurrentLEDState_2_002',10,'Scene')"
     )
     conn.execute("INSERT INTO HVACEntities VALUES (1,'Main Thermostat',11)")
     conn.execute(
@@ -101,6 +104,7 @@ def test_reassemble_and_parse_devices():
     assert light.addresses == "002,1,(null)"
     assert light.state_name == "Proj.Host.CurrentDimmerLevel_1_002"
     assert light.entity_id == "light:1"
+    assert all(device.name != "AUX B" for device in devices)
 
     climate = next(d for d in devices if d.device_type == "climate")
     assert climate.name == "Main Thermostat"

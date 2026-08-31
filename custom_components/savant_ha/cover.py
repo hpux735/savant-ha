@@ -31,7 +31,6 @@ class SavantCover(SavantEntity, CoverEntity):
         )
         self._room = device.get("room", "")
         self._attr_unique_id = f"{hub.uid}_cover_{device['id']}"
-        self._attr_name = device["name"]
 
     @property
     def is_closed(self) -> bool | None:

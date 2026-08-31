@@ -49,7 +49,6 @@ class SavantLight(SavantEntity, LightEntity):
         self._state_name = device.get("state_name", "")
         self._addresses = _split_addresses(device.get("addresses", ""))
         self._attr_unique_id = f"{hub.uid}_light_{device['id']}"
-        self._attr_name = device["name"]
         self._attr_color_mode = ColorMode.BRIGHTNESS
 
     def _component(self) -> str:

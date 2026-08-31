@@ -83,7 +83,6 @@ class SavantClimate(SavantEntity, ClimateEntity):
         )
         self._suffix = suffix
         self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
-        self._attr_name = device["name"]
 
     # ------------------------------------------------------------ state keys
 

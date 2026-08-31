@@ -73,7 +73,6 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._logical_component = logical_component
         self._room = str(device.get("room") or "")
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
-        self._attr_name = device["name"]
 
     def _key(self, attr: str) -> str:
         return f"{_zone_prefix(self._component, self._logical_component)}{attr}"

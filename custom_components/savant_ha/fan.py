@@ -28,7 +28,6 @@ class SavantFan(SavantEntity, FanEntity):
         )
         self._room = device.get("room", "")
         self._attr_unique_id = f"{hub.uid}_fan_{device['id']}"
-        self._attr_name = device["name"]
 
     @property
     def is_on(self) -> bool:

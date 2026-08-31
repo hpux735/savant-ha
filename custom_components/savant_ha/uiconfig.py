@@ -198,12 +198,19 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
         addr_col = _pick(cols, ("addresses",))
         state_col = _pick(cols, ("stateName", "state_name"))
         zone_col = _pick(cols, ("zoneID", "zoneId", "zone_id"))
+        entity_type_col = _pick(cols, ("entityType", "entity_type"))
 
         cursor = conn.execute(f'SELECT * FROM "{table}"')
         for row in cursor:
             d = _row_to_dict(cursor, row)
             name = str(d.get(name_col) or "") if name_col else ""
             if not name:
+                continue
+            # LightEntities also contains keypad LEDs and scene indicators. They have
+            # entityType "Scene" (often CurrentLEDState/IsSceneActive), not a
+            # controllable lighting load, so importing them creates misleading entries
+            # such as "AUX B" and "CCW" (PROTOCOL.md §13.2).
+            if device_type == "light" and str(d.get(entity_type_col) or "") == "Scene":
                 continue
             zone_id = d.get(zone_col) if zone_col else None
             devices.append(
