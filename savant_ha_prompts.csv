@@ -79,3 +79,5 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788299719011,2026-09-01T21:55:19.000000Z,ses_savant_ha2_000,Ask about album-art documentation,"we're not getting album art from the savant host; that would be really nice.  Is it documented in the reverse engineering repo?"
 1788300364358,2026-09-01T22:06:04.000000Z,ses_savant_ha2_000,Album-art documentation available,"Ok, the information about loading album art has been added"
 1788300699877,2026-09-01T22:11:39.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"
+1788301120417,2026-09-01T22:18:40.000000Z,ses_savant_ha2_000,Fix music power-state feedback,"I can click the power button on the home assistant control card for music, and it *does* turn off the music on the savant host, but home assistant thinks the music is still playing and that the media device is still on."
+1788301338388,2026-09-01T22:22:18.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"

@@ -67,6 +67,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._media_position_updated_at: datetime | None = None
         self._artwork_key: str | None = None
         self._artwork: bytes | None = None
+        self._power_off_requested = False
 
     def _key(self, attr: str) -> str:
         return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
@@ -78,6 +79,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         return self._state(key, self._state(self._key(attr)))
 
     def _handle_coordinator_update(self) -> None:
+        # A nonempty room service confirms a later external/native power-on after an
+        # optimistic PowerOff. Empty ActiveService is the host's authoritative idle state.
+        if self._state(f"{self._room}.ActiveService"):
+            self._power_off_requested = False
         position = self.media_position
         if position != self._last_media_position:
             self._last_media_position = position
@@ -88,6 +93,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     @property
     def state(self) -> MediaPlayerState:
+        if self._power_off_requested or self._state(f"{self._room}.ActiveService") == "":
+            return MediaPlayerState.OFF
         has_media = bool(self._value(_SONG) or self._value(_ARTIST))
         if has_media:
             if self._value(_PAUSED) is False:
@@ -193,15 +200,21 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     async def async_turn_on(self) -> None:
         await self._media_request(VERB_POWER_ON)
+        self._power_off_requested = False
+        self.async_write_ha_state()
 
     async def async_turn_off(self) -> None:
         await self._media_request(VERB_POWER_OFF)
+        self._power_off_requested = True
+        self.async_write_ha_state()
 
     async def async_set_volume_level(self, volume: float) -> None:
         await self._media_request(VERB_SET_VOLUME, {"VolumeValue": int(round(volume * 100))})
 
     async def async_media_play(self) -> None:
         await self._media_request(VERB_PLAY)
+        self._power_off_requested = False
+        self.async_write_ha_state()
 
     async def async_media_pause(self) -> None:
         await self._media_request(VERB_PAUSE)

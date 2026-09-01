@@ -237,6 +237,8 @@ payload:{key:<artwork-key>,type:"nowPlayingArtwork"}}`. The raw binary reply has
 variable prefix followed by a JPEG stream; locate JPEG SOI/EOI markers rather than assume
 an offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
 `Pause`, `SkipUp`, `SkipDown`, and `Seek {ProgressValue:<0-100 percent>}`.
+After `PowerOff`, the host can retain all metadata, pause, and progress values; use the
+room's explicit `ActiveService:""` state as the authoritative off signal instead.
 
 ### 5.4 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
 
