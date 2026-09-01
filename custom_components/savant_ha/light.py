@@ -54,9 +54,11 @@ class SavantLight(SavantEntity, LightEntity):
         self._addresses = device.get("addresses", "")
         self._device = device
         self._is_switch = is_switch(device)
-        # Optimistic state: the host does not push lighting state back on this build, so
-        # remember the last commanded on/brightness to make the power toggle behave like
-        # a normal HA light (instant feedback + correct on/off toggling).
+        # Optimistic state: the host pushes per-load state once the client encodes
+        # msgpack strings with the legacy raw formats (PROTOCOL.md §1), but the pushed
+        # confirmation arrives a round-trip later — remember the last commanded
+        # on/brightness so the power toggle feels instant like a native HA light.
+        # The pushed state remains authoritative (it overrides the assumed values).
         self._assumed_on: bool | None = None
         self._assumed_brightness: int | None = None
         if self._is_switch:

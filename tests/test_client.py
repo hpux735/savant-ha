@@ -11,6 +11,7 @@ import pytest
 
 from custom_components.savant_ha import savant_client as sc
 from custom_components.savant_ha.const import (
+    DASHBOARD_STATE_RECENT_SERVICES,
     ENVELOPE_KEY_MESSAGES,
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
@@ -124,6 +125,19 @@ def test_handle_frame_ignores_non_state_messages():
     assert seen == []
 
 
+def test_pack_encodes_long_strings_with_legacy_raw16():
+    # Live-verified against the target host: its msgpack parser drops any frame
+    # containing a new-spec str8 (0xd9) string, so strings longer than 31 chars (every
+    # long dotted state key) must be encoded with legacy raw16 (0xda). A 40-char key
+    # encodes as da 00 28.
+    data = sc._pack({"state": "Savant.Lighting.CurrentDimmerLevel_1_001"})
+    assert b"\xd9" not in data
+    assert b"\xda\x00\x28" in data
+    assert msgpack.unpackb(data, raw=False) == {
+        "state": "Savant.Lighting.CurrentDimmerLevel_1_001"
+    }
+
+
 def test_send_handshake_uses_expected_envelope():
     client = SavantClient(
         "10.0.0.5",
@@ -164,6 +178,35 @@ def test_send_handshake_uses_expected_envelope():
     reg_uri, reg_messages = sent[2]
     assert reg_uri == URI_STATE_REGISTER
     assert reg_messages == [{"state": "a.b"}]
+
+
+def test_post_auth_matches_observed_state_startup_order():
+    client = SavantClient("10.0.0.5", 12345, subscribe_keys=["a.b"])
+    client._authorized = True
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        await client._post_auth()
+
+    asyncio.run(run())
+
+    assert sent == [
+        ("session/fileDownload", [{"filePath": "uiconfig.tar.gz"}]),
+        ("dis/dashboard/register", [{"state": DASHBOARD_STATE_RECENT_SERVICES}]),
+        (URI_STATE_REGISTER, [{"state": "global.SonosGroups"}]),
+        ("dis/userData/register", [{"state": "local.setting.update"}]),
+        ("dis/userData/register", [{"state": "user.setting.update"}]),
+        ("dis/userData/register", [{"state": "global.setting.update"}]),
+        (URI_STATE_REGISTER, [{"state": "a.b"}]),
+        ("dcm/request", [{"request": "getMode"}]),
+        ("dis/userData/register", [{"state": "global.image.update"}]),
+        ("dis/userData/register", [{"state": "user.image.update"}]),
+        ("dis/dashboard/request", [{"request": "GetAVAutomationScenes"}]),
+    ]
 
 
 def test_subscribe_keys_include_every_category():

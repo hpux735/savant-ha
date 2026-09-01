@@ -33,6 +33,7 @@ from aiohttp import WSMsgType, hdrs
 from . import uiconfig
 from .const import (
     DASHBOARD_REQUEST_SCENES,
+    DASHBOARD_STATE_RECENT_SERVICES,
     DEVICE_APP,
     DEVICE_MAKE,
     DEVICE_MODEL,
@@ -58,12 +59,16 @@ from .const import (
     URI_DASHBOARD_REGISTER,
     URI_DASHBOARD_REQUEST,
     URI_DASHBOARD_UPDATE,
+    URI_DCM_REQUEST,
     URI_DEVICE_PRESENT,
     URI_DEVICE_RECOGNIZED,
     URI_FEATURE_LOCK,
     URI_FILE_DOWNLOAD,
     URI_STATE_REGISTER,
     URI_STATE_UPDATE,
+    URI_USER_DATA_REGISTER,
+    USER_DATA_IMAGE_STATES,
+    USER_DATA_INITIAL_STATES,
     build_default_subscribe_keys,
     new_uid,
     room_from_state_key,
@@ -277,7 +282,16 @@ async def probe_host(
 
 
 def _pack(obj: Any) -> bytes:
-    return msgpack.packb(obj, use_bin_type=True)
+    # Live-verified against the target host: its msgpack parser does NOT accept the
+    # new-spec ``str8`` (0xd9) format. Any envelope containing a string longer than 31
+    # chars (e.g. every long dotted state key such as
+    # ``Savant.Lighting.CurrentDimmerLevel_1_001``) is silently dropped — including the
+    # whole ``state/register`` frame — which is why state never arrived while auth,
+    # controls, and short-key registrations (all fixstr) worked. Encoding strings with
+    # the legacy raw formats (fixstr / raw16; msgpack-python's ``use_bin_type=False``)
+    # is accepted, matching the reverse-engineering demo's verified client
+    # (PROTOCOL.md §1).
+    return msgpack.packb(obj, use_bin_type=False)
 
 
 def _encode_discovery(service: str) -> bytes:
@@ -647,8 +661,6 @@ class SavantClient:
                 if not self._auth_response_seen:
                     LOGGER.warning("Savant: host did not answer authenticationRequest")
             await self._post_auth()
-            if self._authorized:
-                await self._request_uiconfig()
         except (SavantError, aiohttp.ClientError, OSError, TimeoutError):
             pass
 
@@ -664,8 +676,20 @@ class SavantClient:
         if self._post_auth_done:
             return
         self._post_auth_done = True
-        await self._send_state_register()
+        # The native local-login startup requests the archive before subscribing, then
+        # registers RecentServices before the state batch (sibling PROTOCOL.md §6.7).
+        # Its causality is not yet isolated, but this replaces our prior undocumented
+        # empty dashboard registration with the observed session sequence.
+        if self._authorized:
+            await self._request_uiconfig()
         await self._send_dashboard_register()
+        # The native client registers this global key once before, and again in, its
+        # main state batch (sibling PROTOCOL.md §6.7).
+        await self.request(URI_STATE_REGISTER, [{"state": "global.SonosGroups"}])
+        await self._send_user_data_register(USER_DATA_INITIAL_STATES)
+        await self._send_state_register()
+        await self.request(URI_DCM_REQUEST, [{"request": "getMode"}])
+        await self._send_user_data_register(USER_DATA_IMAGE_STATES)
         await self._send_scenes_request()
 
     async def _send_state_register(self) -> None:
@@ -692,16 +716,20 @@ class SavantClient:
             LOGGER.debug("Failed to register additional state keys (reconnecting?)")
 
     async def _send_dashboard_register(self) -> None:
-        # Subscribe to dashboard pushes — the scene list embeds every room name
-        # (PROTOCOL.md §6.1).
-        # ASSUMPTION: the dis/<service>/register payload is an empty message map; the
-        # exact register-payload shape has not been captured, but the active
-        # GetAVAutomationScenes request below is observed and is the primary source.
-        await self.request(URI_DASHBOARD_REGISTER, [{}])
+        # Subscribe to the native client's observed dashboard state.  Dashboard scene
+        # responses also embed room names (PROTOCOL.md §5.2).
+        await self.request(
+            URI_DASHBOARD_REGISTER, [{"state": DASHBOARD_STATE_RECENT_SERVICES}]
+        )
 
     async def _send_scenes_request(self) -> None:
         # Actively fetch the scene list; the response also embeds room names.
         await self.request(URI_DASHBOARD_REQUEST, [{"request": DASHBOARD_REQUEST_SCENES}])
+
+    async def _send_user_data_register(self, states: tuple[str, ...]) -> None:
+        """Register the observed user-data update channels."""
+        for state in states:
+            await self.request(URI_USER_DATA_REGISTER, [{"state": state}])
 
     async def _disconnect(self) -> None:
         was_connected = self._connected

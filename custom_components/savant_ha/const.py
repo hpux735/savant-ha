@@ -88,10 +88,22 @@ URI_DCM_REQUEST = "dcm/request"
 URI_DASHBOARD_REGISTER = "dis/dashboard/register"
 URI_DASHBOARD_UPDATE = "dis/dashboard/update"
 URI_DASHBOARD_REQUEST = "dis/dashboard/request"
+URI_USER_DATA_REGISTER = "dis/userData/register"
 URI_FEATURE_LOCK = "featureLock"
 
 # Dashboard RPC verb that returns the scene list (which embeds room names).
 DASHBOARD_REQUEST_SCENES = "GetAVAutomationScenes"
+# Native clients register this dashboard state before the main state subscription
+# (PROTOCOL.md §3; sibling PROTOCOL.md §6.7).
+DASHBOARD_STATE_RECENT_SERVICES = "RecentServices"
+# Native startup registers these user-data state channels around the main state batch
+# (PROTOCOL.md §3; sibling PROTOCOL.md §6.7).
+USER_DATA_INITIAL_STATES = (
+    "local.setting.update",
+    "user.setting.update",
+    "global.setting.update",
+)
+USER_DATA_IMAGE_STATES = ("global.image.update", "user.image.update")
 # State key the host pushes the scene list under (PROTOCOL.md §9).
 SCENES_STATE_KEY = "scenesAndFoldersReduced"
 
@@ -242,6 +254,7 @@ MUSIC_ZONE_ATTRIBUTES = (
 GLOBAL_STATE_KEYS = (
     "global.CurrentTemperature",
     "global.LightsAreOn",
+    "global.SonosGroups",
     "Energy.Grid.IsAvailable",
 )
 

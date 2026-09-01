@@ -26,6 +26,15 @@ iOS app 11.2.4, as observed by the sibling project.
 - **client → host:** plaintext msgpack.
 - **host → client:** **gzip-compressed** msgpack (`0x1f 0x8b`).
 - Keepalive: WS `ping`/`pong`, byte `0x45` (`E`), every ~2s.
+- **String encoding (live-verified):** the host's msgpack parser does **not** accept the
+  new-spec `str8` (`0xd9`) format. Any envelope containing a string longer than 31
+  chars — e.g. every long dotted state key such as
+  `Savant.Lighting.CurrentDimmerLevel_1_001` — is silently dropped, including the whole
+  frame. Strings ≤31 chars use `fixstr`, which is identical in both specs, which is why
+  auth, controls, and short-key registrations all worked while `state/register` never
+  did. Clients must encode long strings with the legacy raw formats (`raw16` = `0xda`);
+  in msgpack-python that means `packb(..., use_bin_type=False)` (verified end-to-end
+  against the target host: full initial snapshot + post-command pushes).
 
 ### 1.1 Host discovery (UDP)
 
@@ -68,8 +77,12 @@ client                            host
   <-- authenticationResponse -------   success: {authorized:true, hostToken, secretKey,
                                       startZone?}
                                        failure: {authorized:false, errorReason, errorCode}
+  session/fileDownload ----------->   native client requests uiconfig.tar.gz first
+  dis/dashboard/register --------->   {state:"RecentServices"}
+  dis/userData/register ---------->   local/user/global setting update channels
   state/register [keys...] -------->   subscribe
-  dis/<svc>/register ... ---------->
+  dcm/request {getMode} ----------->
+  dis/userData/register ---------->   global/user image update channels
   <-- state/update / dis/<svc>/update  async pushes
   service/request -------------->   device control (verbs)
   ping "E" <-> pong "E" (2s) -      keepalive
@@ -167,13 +180,18 @@ number). Per-load lighting keys (from the archive `stateName`) are
 the form `"R,G,B,W,<level>,<level>|kelvin,<level>,<level>|<curve>"` (e.g.
 `"083,079,245,000,096,096|6000,096,096|Custom 1"`).
 
-**State push behaviour varies by host/build.** `state/register` takes a list of
-single-key maps (`messages:[{"state":k}, …]`, ~70 keys in one frame) and the host
-pushes `state/update` `{state,value}` on change (with an immediate snapshot per key on
-register). On the reference app capture the host confirms every light change; on this
-integration's target host (SVR-5200s / build 11.2.1) the host answers `state/update []`
-(empty) and pushes nothing, so lighting entities additionally apply **optimistic** local
-state on command.
+**State push behaviour.** `state/register` takes a list of single-key maps
+(`messages:[{"state":k}, …]`, ~70 keys in one frame) and the host answers with an
+immediate per-key snapshot (`state/update` `{state,value}`; a key with no current value
+pushes `value: ""`), then pushes `state/update` on change — including to every other
+subscribed session (cross-client). A `DimmerSet` is confirmed by pushes of the load's
+`CurrentDimmerLevel_N_<addr>` / `CurrentColor_N_<addr>` and the room's
+`BrightnessLevel` / `RoomLightsAreOn`. An empty `state/update {messages:[]}` alone is
+not a registration error (the native app receives one pre-auth). Earlier observations
+that this host "pushes nothing" were caused by the client's msgpack `str8` encoding —
+see §1; with legacy encoding the target host delivers the full snapshot. Lighting
+entities still apply an optimistic local state on command so the UI reflects changes
+instantly, but the pushed state is authoritative once it arrives.
 
 **Deriving the room list (no dedicated "get rooms" endpoint).** Room names are arbitrary
 host-defined strings; the full set is inferred from (PROTOCOL.md §6.1 of the sibling):
@@ -187,10 +205,12 @@ host-defined strings; the full set is inferred from (PROTOCOL.md §6.1 of the si
 3. **`startZone`** on `session/authenticationResponse` names the room the session opens
    in (one room, not the full list).
 
-This integration subscribes to `dis/dashboard` (register + `GetAVAutomationScenes`) to
-harvest room names, takes `startZone` from the auth response, and additionally derives
-rooms from any `<room>.<attr>` state key it sees; each newly discovered room's per-room
-keys are then registered.
+This integration requests `uiconfig.tar.gz`, registers dashboard state `RecentServices`,
+then registers state keys and sends `dcm/request {getMode}`, matching the observed native
+startup order. It also uses `GetAVAutomationScenes` to harvest room names, takes
+`startZone` from the auth response, and additionally derives rooms from any
+`<room>.<attr>` state key it sees; each newly discovered room's per-room keys are then
+registered.
 
 ### 5.3 Audio zones — `Music.Audio Zone N.SVC_AV_SAVANTMUSIC.*`
 `ZonesActiveIn`, `CurrentSongName`, `CurrentArtistName`, `CurrentAlbumName`,
@@ -260,8 +280,9 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
 4. **Play / pause / mute / power-off** verbs for media transport are not in the observed
    catalog yet (only `PowerOn`/`SetVolume`); media player entities expose the *known*
    commands only.
-5. `state/update` is delta-only in the observed local session: registering a state key
-   did not return an initial snapshot. No read-current-state RPC has been observed.
+5. ~~`state/update` delta vs snapshot semantics~~ — RESOLVED: registration returns an
+   immediate per-key snapshot (empty-string value when idle), then delta-only pushes
+   on change (§5.2; sibling PROTOCOL.md §6.6).
 6. Scene trigger verb — `dis/dashboard/request` verbs (`CaptureScene`, `UpsertScene`,
    `RemoveScene`, `GetAVAutomationScenes`) are known but the "run scene" verb is not
    yet confirmed.
