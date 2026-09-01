@@ -233,6 +233,32 @@ def test_shade_address_args_uses_five_addresses():
     }
 
 
+def test_shade_set_args_preserves_controller_address_shape():
+    assert control.shade_set_args("01,02,(null),(null),(null)", 50) == {
+        "Address1": "01",
+        "Address2": "02",
+        "Address3": "(null)",
+        "Address4": "(null)",
+        "Address5": "(null)",
+        "ShadeLevel": "50",
+        "FadeTime": "0",
+        "DelayTime": "0",
+        "PresetNumber": "0",
+        "SceneNumber": "0",
+    }
+
+
+def test_shade_set_args_preserves_bond_address_shape():
+    assert control.shade_set_args("opaque-id,,,,", 59, 2, 3, 4, 5) == {
+        "Address1": "opaque-id",
+        "ShadeLevel": "59",
+        "FadeTime": "2",
+        "DelayTime": "3",
+        "PresetNumber": "4",
+        "SceneNumber": "5",
+    }
+
+
 def test_shade_component_logical_from_state_name():
     assert control.shade_component_logical(
         "Bond Bridge.Lighting_controller.ShadeLevel_c2aac4873a450684"

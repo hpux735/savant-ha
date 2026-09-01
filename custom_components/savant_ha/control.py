@@ -161,6 +161,35 @@ def shade_address_args(addresses: str, count: int = 5) -> dict[str, str]:
     return {f"Address{index}": value for index, value in enumerate(parts[:count], start=1)}
 
 
+def shade_set_args(
+    addresses: str,
+    position: int,
+    fade_time: Any = 0,
+    delay_time: Any = 0,
+    preset_number: Any = 0,
+    scene_number: Any = 0,
+) -> dict[str, str]:
+    """Build native ``ShadeSet`` arguments (sibling PROTOCOL.md §7.5).
+
+    Controller shades include their explicit ``(null)`` address padding, while Bond
+    shades have only ``Address1``. Do not add a synthetic Address6.
+    """
+    parts = [part.strip() for part in addresses.split(",")] if addresses else []
+    while parts and not parts[-1]:
+        parts.pop()
+    args = {f"Address{index}": value for index, value in enumerate(parts, start=1)}
+    args.update(
+        {
+            "ShadeLevel": str(position),
+            "FadeTime": str(fade_time or 0),
+            "DelayTime": str(delay_time or 0),
+            "PresetNumber": str(preset_number or 0),
+            "SceneNumber": str(scene_number or 0),
+        }
+    )
+    return args
+
+
 def shade_component_logical(state_name: str) -> tuple[str, str]:
     """The (component, logical_component) for a shade, from its ``stateName``."""
     prefix = state_name.rsplit(".", 1)[0] if "." in state_name else ""

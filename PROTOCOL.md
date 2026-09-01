@@ -270,7 +270,8 @@ Observed verbs used by this integration:
 | `SetCoolPointTemperature` / `SetHeatPointTemperature` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)", CoolPointTemperature|HeatPointTemperature:<F°>}` |
 | `SetHVACModeAuto` / `SetHVACModeCool` / `SetHVACModeHeat` / `SetHVACModeOff` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)"}` |
 | `SetFanModeAuto` / `SetFanModeCycle` / `SetFanModeOn` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)"}` |
-| `ShadeUp` / `ShadeDown` / `ShadeStop` | shade | `{Address1..5}` (`SVC_ENV_SHADE`; live-verified on an Office shade) |
+| `ShadeUp` / `ShadeDown` / `ShadeStop` | shade | `{Address1..5}` (`SVC_ENV_SHADE`) |
+| `ShadeSet` | shade | native address shape plus string `{ShadeLevel, FadeTime, DelayTime, PresetNumber, SceneNumber}` (`SVC_ENV_SHADE`; sibling PROTOCOL.md §7.5) |
 
 HVAC scope is archive-derived: `component`/`logicalComponent` come from the entity's
 `stateName`, `serviceType:"SVC_ENV_HVAC"`, `variantID:"1"`, `zone:""`.
@@ -285,8 +286,9 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
    across sessions is unconfirmed (the integration re-logs-in with `{user, password}`
    each reconnect).
 3. Full verb list for **fans / door-locks / garage** control (expected under
-   `service/request`, not yet captured). `ShadeUp`, `ShadeDown`, and `ShadeStop` are
-   archive-derived and live-verified; variable-shade position direction remains unknown.
+   `service/request`, not yet captured). Shade control is documented in the sibling
+   `PROTOCOL.md` §6.1.1 and §7.5: `ShadeLevel` is 0 (closed) through 100 (open),
+   `ShadeSet` updates may be asynchronous and controller positions may quantize by ±1.
 4. **Play / pause / mute / power-off** verbs for media transport are not in the observed
    catalog yet (only `PowerOn`/`SetVolume`); media player entities expose the *known*
    commands only.
@@ -303,5 +305,3 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
 8. Temperature scale is observable via `SchedulerSettings.TemperatureScale`
    (`"Fahrenheit"`|`"Celsius"`); the integration currently assumes Fahrenheit instead of
    reading it.
-9. ShadeLevel direction — the archive names a variable shade state `ShadeLevel`, but the
-   observed wire data has not established whether `0` is closed and `100` is open.

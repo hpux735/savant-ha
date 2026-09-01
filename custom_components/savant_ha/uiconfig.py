@@ -231,7 +231,16 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
                             "technology": str(d.get(_pick(cols, ("technology",))) or ""),
                         }
                         if device_type == "light"
-                        else {}
+                        else (
+                            {
+                                "fade_time": d.get(_pick(cols, ("fadeTime",))),
+                                "delay_time": d.get(_pick(cols, ("delayTime",))),
+                                "preset_number": d.get(_pick(cols, ("presetNumber",))),
+                                "scene_number": d.get(_pick(cols, ("sceneNumber",))),
+                            }
+                            if device_type == "cover"
+                            else {}
+                        )
                     ),
                 )
             )
