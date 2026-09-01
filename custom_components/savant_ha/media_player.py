@@ -1,12 +1,8 @@
-"""Media player platform: one entity per Savant audio zone.
-
-Uses the archive-derived ``<component>.Audio Zone N.SVC_AV_SAVANTMUSIC.*`` state keys
-for now-playing metadata and ``PowerOn`` / ``SetVolume`` for control (PROTOCOL.md
-§5.3/§6/§13). Volume and mute are held on the *room*, not the zone, so volume control
-is offered only when the zone's active room can be resolved via ``ZonesActiveIn``.
-"""
+"""Media player platform: one entity per Savant audio zone."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
@@ -16,36 +12,34 @@ from homeassistant.components.media_player import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DEVICE_TYPE_MEDIA_PLAYER,
     DOMAIN,
     MUSIC_ZONE_PREFIX,
-    ROOM_CURRENT_VOLUME,
     SVC_AV_SAVANTMUSIC,
+    VERB_PAUSE,
+    VERB_PLAY,
+    VERB_POWER_OFF,
     VERB_POWER_ON,
+    VERB_SEEK,
     VERB_SET_VOLUME,
+    VERB_SKIP_DOWN,
+    VERB_SKIP_UP,
 )
-from .control import audio_zone_logical_component, zone_state_prefix
+from .control import audio_zone_logical_component, parse_media_time, zone_state_prefix
 from .entity import SavantEntity
 from .hub import SavantHub
 
-_ZONE_MARKER = "ZonesActiveIn"
 _SONG = "CurrentSongName"
 _ARTIST = "CurrentArtistName"
 _ALBUM = "CurrentAlbumName"
 _SERVICE = "CurrentStreamingService"
-
-
-def _active_rooms(hub: SavantHub, component: str, logical_component: str) -> list[str]:
-    # ZonesActiveIn maps zone -> room (§6.2); the exact shape is unconfirmed, so both a
-    # mapping (values) and a list are accepted defensively.
-    value = hub.get(f"{zone_state_prefix(component, logical_component)}{_ZONE_MARKER}")
-    if isinstance(value, dict):
-        return [r for r in value.values() if isinstance(r, str)]
-    if isinstance(value, list):
-        return [r for r in value if isinstance(r, str)]
-    return []
+_PAUSED = "CurrentPauseStatus"
+_ELAPSED = "CurrentElapsedTime"
+_REMAINING = "CurrentRemainingTime"
+_SEEK_DISABLED = "SeekDisabled"
 
 
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
@@ -68,80 +62,136 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._logical_component = logical_component
         self._room = str(device.get("room") or "")
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
+        self._last_media_position: float | None = None
+        self._media_position_updated_at: datetime | None = None
 
     def _key(self, attr: str) -> str:
         return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
 
-    def _active_rooms(self) -> list[str]:
-        return _active_rooms(self.hub, self._component, self._logical_component)
+    def _value(self, attr: str) -> object:
+        # The current host uses an unqualified audio-zone state namespace; retain the
+        # service-qualified state form captured on the original host as a fallback.
+        key = f"{self._component}.{self._logical_component}.{attr}"
+        return self._state(key, self._state(self._key(attr)))
+
+    def _handle_coordinator_update(self) -> None:
+        position = self.media_position
+        if position != self._last_media_position:
+            self._last_media_position = position
+            self._media_position_updated_at = dt_util.utcnow() if position is not None else None
+        super()._handle_coordinator_update()
 
     # ------------------------------------------------------------ media player
 
     @property
     def state(self) -> MediaPlayerState:
-        rooms = self._active_rooms()
-        playing = self._state(self._key(_SONG)) or self._state(self._key(_ARTIST))
-        if rooms or playing:
+        has_media = bool(self._value(_SONG) or self._value(_ARTIST))
+        if has_media:
+            if self._value(_PAUSED) is False:
+                return MediaPlayerState.PLAYING
+            if self._value(_PAUSED) is True:
+                return MediaPlayerState.PAUSED
             return MediaPlayerState.ON
         return MediaPlayerState.OFF
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
-        features = MediaPlayerEntityFeature.TURN_ON
-        if self._active_rooms():
-            features |= MediaPlayerEntityFeature.VOLUME_SET
+        features = (
+            MediaPlayerEntityFeature.TURN_ON
+            | MediaPlayerEntityFeature.TURN_OFF
+            | MediaPlayerEntityFeature.VOLUME_SET
+            | MediaPlayerEntityFeature.PLAY
+            | MediaPlayerEntityFeature.PAUSE
+            | MediaPlayerEntityFeature.NEXT_TRACK
+            | MediaPlayerEntityFeature.PREVIOUS_TRACK
+        )
+        if self._value(_SEEK_DISABLED) is False:
+            features |= MediaPlayerEntityFeature.SEEK
         return features
 
     @property
     def media_title(self) -> str | None:
-        return self._state(self._key(_SONG))
+        value = self._value(_SONG)
+        return value if isinstance(value, str) and value else None
 
     @property
     def media_artist(self) -> str | None:
-        return self._state(self._key(_ARTIST))
+        value = self._value(_ARTIST)
+        return value if isinstance(value, str) and value else None
 
     @property
     def media_album_name(self) -> str | None:
-        return self._state(self._key(_ALBUM))
+        value = self._value(_ALBUM)
+        return value if isinstance(value, str) and value else None
 
     @property
     def media_content_type(self) -> str | None:
-        return self._state(self._key(_SERVICE))
+        value = self._value(_SERVICE)
+        return value if isinstance(value, str) and value else None
 
     @property
     def volume_level(self) -> float | None:
-        rooms = self._active_rooms()
-        if not rooms:
-            return None
-        value = self._state(f"{rooms[0]}.{ROOM_CURRENT_VOLUME}")
+        value = self._value("CurrentVolume")
         if isinstance(value, (int, float)):
             return max(0.0, min(1.0, float(value) / 100.0))
         return None
 
-    async def async_turn_on(self) -> None:
-        rooms = self._active_rooms()
+    @property
+    def media_position(self) -> float | None:
+        return parse_media_time(self._value(_ELAPSED))
+
+    @property
+    def media_duration(self) -> float | None:
+        elapsed = parse_media_time(self._value(_ELAPSED))
+        remaining = parse_media_time(self._value(_REMAINING))
+        if elapsed is not None and remaining is not None:
+            return elapsed + remaining
+        return None
+
+    @property
+    def media_position_updated_at(self) -> datetime | None:
+        return self._media_position_updated_at
+
+    async def _media_request(
+        self, request: str, request_args: dict[str, int] | None = None
+    ) -> None:
         await self._service_request(
-            VERB_POWER_ON,
+            request,
             component=self._component,
             service_type=SVC_AV_SAVANTMUSIC,
-            zone=rooms[0] if rooms else self._room,
+            zone=self._room,
             logical_component=self._logical_component,
             variant_id="1",
+            request_args=request_args,
         )
 
+    async def async_turn_on(self) -> None:
+        await self._media_request(VERB_POWER_ON)
+
+    async def async_turn_off(self) -> None:
+        await self._media_request(VERB_POWER_OFF)
+
     async def async_set_volume_level(self, volume: float) -> None:
-        rooms = self._active_rooms()
-        if not rooms:
+        await self._media_request(VERB_SET_VOLUME, {"VolumeValue": int(round(volume * 100))})
+
+    async def async_media_play(self) -> None:
+        await self._media_request(VERB_PLAY)
+
+    async def async_media_pause(self) -> None:
+        await self._media_request(VERB_PAUSE)
+
+    async def async_media_next_track(self) -> None:
+        await self._media_request(VERB_SKIP_UP)
+
+    async def async_media_previous_track(self) -> None:
+        await self._media_request(VERB_SKIP_DOWN)
+
+    async def async_media_seek(self, position: float) -> None:
+        duration = self.media_duration
+        if duration is None or duration <= 0:
             return
-        await self._service_request(
-            VERB_SET_VOLUME,
-            component=self._component,
-            service_type=SVC_AV_SAVANTMUSIC,
-            zone=rooms[0],
-            logical_component=self._logical_component,
-            variant_id="1",
-            request_args={"VolumeValue": int(round(volume * 100))},
-        )
+        progress = max(0, min(100, round(position / duration * 100)))
+        await self._media_request(VERB_SEEK, {"ProgressValue": progress})
 
 
 def _discovered_zones(hub: SavantHub) -> set[int]:

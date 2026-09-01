@@ -244,8 +244,15 @@ def test_device_state_keys_passthrough_for_non_climate():
 
 def test_audio_zone_state_keys_keep_component_identity():
     keys = audio_zone_state_keys("Living Room Sound Bar", "Audio Zone 1")
+    assert "Living Room Sound Bar.Audio Zone 1.CurrentSongName" in keys
     assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" in keys
     assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.ZonesActiveIn" in keys
+
+
+def test_default_music_subscriptions_include_both_observed_key_shapes():
+    keys = build_default_subscribe_keys()
+    assert "Music.Audio Zone 1.CurrentSongName" in keys
+    assert "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" in keys
 
 
 def test_local_login_uses_user_password_form():

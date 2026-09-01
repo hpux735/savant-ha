@@ -219,6 +219,22 @@ def zone_state_prefix(component: str, logical_component: str) -> str:
     return f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
 
 
+def parse_media_time(value: Any) -> float | None:
+    """Convert observed ``MM:SS``/``HH:MM:SS`` media state strings to seconds."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parts = [int(part) for part in value.strip().split(":")]
+    except ValueError:
+        return None
+    if not 1 <= len(parts) <= 3 or any(part < 0 for part in parts):
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + part
+    return float(seconds)
+
+
 def parse_light_state(state_name: str, value: Any) -> tuple[bool | None, int | None]:
     """Interpret a light load's state value as ``(is_on, brightness 0-255)``.
 

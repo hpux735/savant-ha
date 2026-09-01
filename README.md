@@ -60,9 +60,9 @@ extra room names) live behind the integration's **Configure** button.
 |---|---|---|
 | Light | `LightEntities` (per-load `addresses` + `stateName`) | brightness / on-off |
 | Climate | `HVACEntities` | mode (Off/Heat/Cool/Auto), heat/cool setpoints, current temp/humidity |
-| Cover | `ShadeEntities` / `GarageEntities` | shade position (read-only for now) |
+| Cover | `ShadeEntities` / `GarageEntities` | shade open/close/stop and position |
 | Fan | `FanEntities` | on/off (read-only for now) |
-| Media Player | `Zones` (AV zones) | now-playing, power on, volume |
+| Media Player | `Zones` (AV zones) | now-playing, power, volume, play/pause, previous/next, seek |
 | Sensor | `global.CurrentTemperature`, `<room>.RoomCurrentTemperature` | temperature |
 
 ## Limitations / open questions
@@ -75,8 +75,10 @@ These are inherited from the sibling protocol document — see `PROTOCOL.md` §7
   `DimmerSet` args; only brightness/on-off are wired so far.
 - **Shades / fans / door-locks** have observed state keys but no captured set-verbs, so
   their entities are read-only for now.
-- **Media transport** (play/pause/mute/power-off) verbs are not in the observed catalog;
-  only `PowerOn`/`SetVolume` are wired.
+- **Media artwork and library browsing** remain unavailable. Artwork state is an opaque
+  host hash with no captured image-fetch operation; browse/search has no captured action
+  that selects a result for playback. Mute/repeat are one-way (`MuteOn`/`RepeatOn`) and
+  are therefore not advertised as HA controls.
 - **Scenes** don't have a confirmed "run scene" verb yet.
 
 Temperature is assumed Fahrenheit (matching the observed `SchedulerSettings` scale).

@@ -110,6 +110,12 @@ SCENES_STATE_KEY = "scenesAndFoldersReduced"
 # ---- Service/request verbs (PROTOCOL.md §6) -------------------------------
 VERB_SET_VOLUME = "SetVolume"
 VERB_POWER_ON = "PowerOn"
+VERB_POWER_OFF = "PowerOff"
+VERB_PLAY = "Play"
+VERB_PAUSE = "Pause"
+VERB_SKIP_UP = "SkipUp"
+VERB_SKIP_DOWN = "SkipDown"
+VERB_SEEK = "Seek"
 VERB_ROOM_BRIGHTNESS = "__RoomSetBrightness"
 VERB_DIMMER_SET = "DimmerSet"
 VERB_SET_COOL_POINT = "SetCoolPointTemperature"
@@ -233,7 +239,7 @@ HVAC_STATE_ATTRIBUTES = (
     "ThermostatIsSavingEnergy",
 )
 
-# Audio-zone attributes, joined as ``Music.Audio Zone <N>.SVC_AV_SAVANTMUSIC.<attr>``.
+# Audio-zone attributes observed in live captures (sibling PROTOCOL.md §6.2).
 MUSIC_ZONE_ATTRIBUTES = (
     "ZonesActiveIn",
     "CurrentSongName",
@@ -244,10 +250,21 @@ MUSIC_ZONE_ATTRIBUTES = (
     "NowPlayingSource",
     "CurrentStreamingService",
     "CurrentPauseStatus",
+    "CurrentRepeatStatus",
+    "CurrentRepeatMode",
+    "CurrentShuffleStatus",
     "CurrentElapsedTime",
     "CurrentRemainingTime",
     "CurrentProgress",
+    "CurrentTransportActions",
     "TransportSet",
+    "SeekDisabled",
+    "SongLiked",
+    "Explicit",
+    "IsRepeatStatusAvailable",
+    "IsShuffleStatusAvailable",
+    "CurrentVolume",
+    "IsMuted",
 )
 
 # Global keys that need no per-room prefix (PROTOCOL.md §5.4).
@@ -272,8 +289,7 @@ def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
         f"{HVAC_STATE_PREFIX}{attr}{HVAC_UNIT_SUFFIX}" for attr in HVAC_STATE_ATTRIBUTES
     ]
     for zone in range(1, DEFAULT_MUSIC_ZONES + 1):
-        for attr in MUSIC_ZONE_ATTRIBUTES:
-            keys.append(f"{MUSIC_ZONE_PREFIX}{zone}.{SVC_AV_SAVANTMUSIC}.{attr}")
+        keys.extend(audio_zone_state_keys("Music", f"Audio Zone {zone}"))
     keys.extend(GLOBAL_STATE_KEYS)
     keys.extend(room_state_keys(set(rooms or [])))
     return keys
@@ -285,8 +301,14 @@ def audio_zone_state_keys(component: str, logical_component: str) -> list[str]:
     The configuration archive identifies an endpoint by both its component and logical
     component. Audio Zone numbers are only unique within a component (PROTOCOL.md §13).
     """
-    prefix = f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
-    return [f"{prefix}{attr}" for attr in MUSIC_ZONE_ATTRIBUTES]
+    # The original capture used the service-qualified form, while the current host
+    # publishes ``<component>.<logicalComponent>.<attr>`` (sibling PROTOCOL.md §6.2).
+    # Register both observed shapes; unknown keys are ignored by the host.
+    prefixes = (
+        f"{component}.{logical_component}.",
+        f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}.",
+    )
+    return [f"{prefix}{attr}" for prefix in prefixes for attr in MUSIC_ZONE_ATTRIBUTES]
 
 
 def device_state_keys(device: dict[str, Any]) -> list[str]:

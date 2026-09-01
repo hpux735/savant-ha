@@ -222,10 +222,19 @@ startup order. It also uses `GetAVAutomationScenes` to harvest room names, takes
 `<room>.<attr>` state key it sees; each newly discovered room's per-room keys are then
 registered.
 
-### 5.3 Audio zones — `Music.Audio Zone N.SVC_AV_SAVANTMUSIC.*`
-`ZonesActiveIn`, `CurrentSongName`, `CurrentArtistName`, `CurrentAlbumName`,
-`CurrentArtworkPath`, `NowPlayingSource`, `CurrentStreamingService`, `CurrentPauseStatus`,
-`CurrentElapsedTime`, `CurrentRemainingTime`, `CurrentProgress`, `TransportSet`, …
+### 5.3 Audio zones
+The original capture used `<component>.<logical>.SVC_AV_SAVANTMUSIC.<attribute>`;
+the current host live-publishes `<component>.<logical>.<attribute>`. Subscribe to both
+observed forms. Attributes include `CurrentSongName`, `CurrentArtistName`,
+`CurrentAlbumName`, `CurrentArtworkPath`, `CurrentStreamingService`,
+`CurrentPauseStatus`, `CurrentElapsedTime`, `CurrentRemainingTime`, `CurrentProgress`,
+`CurrentTransportActions`, `SeekDisabled`, `CurrentVolume`, and `IsMuted`.
+
+On the current host, elapsed and remaining time are `MM:SS` strings, progress is an int
+0-100, pause status is a bool, and `CurrentArtworkPath` is an opaque hash rather than a
+fetchable URL. Do not expose it as Home Assistant artwork until its image-fetch protocol
+is captured. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
+`Pause`, `SkipUp`, `SkipDown`, and `Seek {ProgressValue:<0-100 percent>}`.
 
 ### 5.4 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
 
@@ -264,7 +273,9 @@ Observed verbs used by this integration:
 | Verb | Scope | args (observed) |
 |---|---|---|
 | `SetVolume` | AV | `{VolumeValue:<0-100>}` (component `Music`/`Optical Input`/`RCA Inputs`, `SVC_AV_SAVANTMUSIC`/`SVC_AV_GENERALAUDIO`) |
-| `PowerOn` | AV | none (component `Music`, `SVC_AV_SAVANTMUSIC`) |
+| `PowerOn` / `PowerOff` | music AV | no args (`SVC_AV_SAVANTMUSIC`) |
+| `Play` / `Pause` / `SkipUp` / `SkipDown` | music AV | no args (`SVC_AV_SAVANTMUSIC`) |
+| `Seek` | music AV | `{ProgressValue:<int 0-100>}` (`SVC_AV_SAVANTMUSIC`) |
 | `__RoomSetBrightness` | lighting | `{BrightnessLevel:<0|100>}` |
 | `DimmerSet` | lighting | `{Address1..6, DimmerLevel, FadeTime, DelayTime, Curve, bleColorRed, bleColorGreen, bleColorBlue, bleColorWhite, kelvin}` (`SVC_ENV_LIGHTING`) |
 | `SetCoolPointTemperature` / `SetHeatPointTemperature` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)", CoolPointTemperature|HeatPointTemperature:<F°>}` |
@@ -289,9 +300,9 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
    `service/request`, not yet captured). Shade control is documented in the sibling
    `PROTOCOL.md` §6.1.1 and §7.5: `ShadeLevel` is 0 (closed) through 100 (open),
    `ShadeSet` updates may be asynchronous and controller positions may quantize by ±1.
-4. **Play / pause / mute / power-off** verbs for media transport are not in the observed
-   catalog yet (only `PowerOn`/`SetVolume`); media player entities expose the *known*
-   commands only.
+4. Music browse/search returns generic UI nodes, but the capture does not establish an
+   action to select a result for playback. `CurrentArtworkPath` is an opaque hash; its
+   image fetch operation is likewise not yet captured.
 5. ~~`state/update` delta vs snapshot semantics~~ — RESOLVED: registration returns an
    immediate per-key snapshot (empty-string value when idle), then delta-only pushes
    on change (§5.2; sibling PROTOCOL.md §6.6).
