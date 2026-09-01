@@ -65,6 +65,11 @@ class SavantLight(SavantEntity, LightEntity):
         self._assumed_on: bool | None = None
         self._assumed_brightness: int | None = None
         self._assumed_rgbw_color: tuple[int, int, int, int] | None = None
+        # The host retains color channels at brightness zero but does not restore the
+        # previous color-load brightness for useLastDimmerValue. Keep the last state the
+        # host reported while on, including changes made outside Home Assistant.
+        self._last_active_brightness: int | None = None
+        self._last_active_rgbw_color: tuple[int, int, int, int] | None = None
         if self._is_switch:
             self._attr_supported_color_modes = {ColorMode.ONOFF}
             self._attr_color_mode = ColorMode.ONOFF
@@ -90,14 +95,24 @@ class SavantLight(SavantEntity, LightEntity):
         return light_address_args(self._addresses)
 
     def _dimmer_args(
-        self, level: int, rgbw_color: tuple[int, int, int, int] | None = None
+        self,
+        level: int,
+        rgbw_color: tuple[int, int, int, int] | None = None,
+        use_last_dimmer_value: bool = False,
     ) -> dict[str, Any]:
-        return dimmer_args(self._device, level, rgbw_color)
+        return dimmer_args(self._device, level, rgbw_color, use_last_dimmer_value)
 
     def _parsed_state(self) -> tuple[bool | None, int | None]:
         if not self._state_name:
             return None, None
-        return parse_light_state(self._state_name, self._state(self._state_name))
+        value = self._state(self._state_name)
+        on, brightness = parse_light_state(self._state_name, value)
+        if on:
+            self._last_active_brightness = brightness
+            color = parse_light_color(self._state_name, value)
+            if color is not None:
+                self._last_active_rgbw_color = color
+        return on, brightness
 
     @property
     def is_on(self) -> bool:
@@ -145,12 +160,22 @@ class SavantLight(SavantEntity, LightEntity):
             return
         brightness = kwargs.get("brightness")
         if self._state_name and self._addresses:
-            level = round(brightness / 255 * 100) if isinstance(brightness, int) else 100
             requested_color = kwargs.get(ATTR_RGBW_COLOR)
+            restore_last = brightness is None and requested_color is None
+            use_host_last = restore_last and not self._is_color
+            level = (
+                round(brightness / 255 * 100)
+                if isinstance(brightness, int)
+                else round((self._last_active_brightness or 255) / 255 * 100)
+            )
             rgbw_color = (
                 tuple(requested_color)
                 if self._is_color and isinstance(requested_color, tuple)
-                else self.rgbw_color
+                else (
+                    (self._last_active_rgbw_color or self.rgbw_color)
+                    if self._is_color
+                    else None
+                )
             )
             await self._service_request(
                 dimmer_command(self._device),
@@ -158,7 +183,7 @@ class SavantLight(SavantEntity, LightEntity):
                 service_type=SVC_ENV_LIGHTING,
                 zone=self._room,
                 logical_component=self._logical_component(),
-                request_args=self._dimmer_args(level, rgbw_color),
+                request_args=self._dimmer_args(level, rgbw_color, use_host_last),
             )
             self._assumed_on = True
             self._assumed_brightness = brightness if isinstance(brightness, int) else 255
@@ -189,12 +214,16 @@ class SavantLight(SavantEntity, LightEntity):
             self.async_write_ha_state()
             return
         if self._state_name and self._addresses:
+            self._parsed_state()  # Retain the current host state before it reports level zero.
             await self._service_request(
                 dimmer_command(self._device),
                 component=self._component(),
                 service_type=SVC_ENV_LIGHTING,
                 zone=self._room,
                 logical_component=self._logical_component(),
+                # Color-capable loads require their current RGBW payload for the off
+                # transition. The next no-attribute turn_on sets useLastDimmerValue to
+                # restore the host's remembered brightness/color.
                 request_args=self._dimmer_args(0, self.rgbw_color),
             )
             self._assumed_on = False

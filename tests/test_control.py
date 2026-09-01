@@ -112,6 +112,16 @@ def test_color_dimmer_brightness_only_omits_color_to_preserve_host_state():
     assert "bleColorRed" not in args
 
 
+def test_color_dimmer_can_omit_color_when_no_state_is_known():
+    device = _light(
+        state_name="Savant.Lighting.CurrentColor_6_006",
+        control={"entity_type": "DMX", "technology": "Infinite Color"},
+    )
+    args = control.dimmer_args(device, 100, use_last_dimmer_value=True)
+    assert args["useLastDimmerValue"] is True
+    assert "bleColor" not in args
+
+
 def test_dimmer_args_includes_flat_ble_color_keys():
     # The archive's DimmerSet definition requires these flat keys even for dimmers.
     args = control.dimmer_args(_light(), 100)
@@ -281,6 +291,16 @@ def test_parse_color_string_on_full_white():
 
 def test_parse_color_string_off():
     value = "000,000,000,000,000,000|6000,000,000|Custom 1"
+    assert control.parse_light_state("Savant.Lighting.CurrentColor_6_006", value) == (
+        False,
+        0,
+    )
+
+
+def test_parse_color_string_retained_rgbw_with_zero_level_is_off():
+    # The host retains RGBW channels after a power-off; the embedded level is the
+    # authoritative on/off value when it is present.
+    value = "083,079,245,016,000,000|6000,000,000|Custom 1"
     assert control.parse_light_state("Savant.Lighting.CurrentColor_6_006", value) == (
         False,
         0,

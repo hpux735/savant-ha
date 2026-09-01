@@ -184,7 +184,11 @@ For Home Assistant, the first four values map directly to RGBW channels (0–255
 first `<level>` maps to brightness (0–100). Color-capable loads accept `DimmerSet` with
 the observed nested `bleColor:{red,green,blue,white,kelvin}` map; omitting that map when
 only dimming preserves the host's existing color. Standard dimmers retain their
-archive-derived flat color fields.
+archive-derived flat color fields. Color-capable loads require their current RGBW payload
+with level zero to turn off. They retain RGBW channels at level zero but do not restore
+the prior brightness through `useLastDimmerValue`; the integration restores the last
+host-reported active RGBW/brightness state (including state changed outside HA). Standard
+dimmers retain the observed `useLastDimmerValue:true` power-on behavior.
 
 **State push behaviour.** `state/register` takes a list of single-key maps
 (`messages:[{"state":k}, …]`, ~70 keys in one frame) and the host answers with an

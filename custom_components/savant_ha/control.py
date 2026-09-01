@@ -55,7 +55,10 @@ def dimmer_command(device: dict[str, Any]) -> str:
 
 
 def dimmer_args(
-    device: dict[str, Any], level: int, rgbw_color: tuple[int, int, int, int] | None = None
+    device: dict[str, Any],
+    level: int,
+    rgbw_color: tuple[int, int, int, int] | None = None,
+    use_last_dimmer_value: bool = False,
 ) -> dict[str, Any]:
     """Build the full ``DimmerSet`` ``requestArgs``.
 
@@ -66,6 +69,7 @@ def dimmer_args(
     control = device.get("control") if isinstance(device.get("control"), dict) else {}
     args: dict[str, Any] = light_address_args(str(device.get("addresses") or ""))
     args["DimmerLevel"] = level
+    args["useLastDimmerValue"] = use_last_dimmer_value
     fade_time = control.get("fade_time")
     delay_time = control.get("delay_time")
     args["FadeTime"] = fade_time if fade_time is not None else "0.5"
@@ -258,9 +262,10 @@ def _parse_color(value: str) -> tuple[bool, int]:
 
     channels = [_int(part) for part in parts[:4]]
     level = _int(parts[4]) if len(parts) >= 5 else 0
-    on = any(channel > 0 for channel in channels) or level > 0
-    if level > 0:
-        return on, _dimmer_brightness(level)
-    if on:
-        return on, max(0, min(255, max(channels)))
+    # Color loads retain their RGBW channels while off. When present, the duplicated
+    # level field is therefore authoritative for on/off and brightness.
+    if len(parts) >= 5:
+        return level > 0, _dimmer_brightness(level)
+    if any(channel > 0 for channel in channels):
+        return True, max(0, min(255, max(channels)))
     return False, 0
