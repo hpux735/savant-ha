@@ -130,6 +130,16 @@ def extract_jpeg(data: bytes) -> bytes | None:
     return data[start : end + len(_JPEG_EOI)]
 
 
+def file_transfer_payload(data: bytes) -> tuple[bytes, bool] | None:
+    """Return the payload and final flag from an observed file-transfer frame."""
+    if len(data) < 14 or data[0] != 0x01 or data[1] not in (0x01, 0x81):
+        return None
+    payload_start = 14 + data[13]
+    if len(data) < payload_start:
+        return None
+    return data[payload_start:], data[1] == 0x81
+
+
 def _log_tls_info(ws: aiohttp.ClientWebSocketResponse) -> None:
     """Log the negotiated TLS version/cipher for diagnostics."""
     try:
@@ -458,6 +468,7 @@ class SavantClient:
         # them and locate JPEG markers instead of assuming the variable host prefix.
         self._artwork_lock = asyncio.Lock()
         self._artwork_bytes = bytearray()
+        self._artwork_image: bytes | None = None
         self._artwork_future: asyncio.Future[bytes | None] | None = None
 
         self.on_state_update: _StateCallback | None = None
@@ -582,6 +593,7 @@ class SavantClient:
             loop = asyncio.get_running_loop()
             future: asyncio.Future[bytes | None] = loop.create_future()
             self._artwork_bytes = bytearray()
+            self._artwork_image = None
             self._artwork_future = future
             try:
                 await self.request(
@@ -603,6 +615,7 @@ class SavantClient:
                 if self._artwork_future is future:
                     self._artwork_future = None
                     self._artwork_bytes = bytearray()
+                    self._artwork_image = None
 
     # ------------------------------------------------------------------ internals
 
@@ -889,16 +902,24 @@ class SavantClient:
 
     def _handle_artwork_frame(self, data: bytes) -> None:
         """Accumulate raw artwork chunks and finish when their JPEG ends."""
+        transfer = file_transfer_payload(data)
+        if transfer is None:
+            return
+        payload, is_final = transfer
         if not self._artwork_bytes:
-            start = data.find(_JPEG_SOI)
+            start = payload.find(_JPEG_SOI)
             if start < 0:
+                if is_final and self._artwork_future is not None:
+                    self._artwork_future.set_result(None)
                 return
-            self._artwork_bytes.extend(data[start:])
+            self._artwork_bytes.extend(payload[start:])
         else:
-            self._artwork_bytes.extend(data)
+            self._artwork_bytes.extend(payload)
         image = extract_jpeg(bytes(self._artwork_bytes))
-        if image is not None and self._artwork_future is not None:
-            self._artwork_future.set_result(image)
+        if image is not None:
+            self._artwork_image = image
+        if is_final and self._artwork_future is not None:
+            self._artwork_future.set_result(self._artwork_image)
 
     def _handle_archive_frame(self, data: bytes) -> None:
         self._uiconfig_frames.append(data)

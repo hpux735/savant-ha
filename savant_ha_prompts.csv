@@ -81,3 +81,5 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788300699877,2026-09-01T22:11:39.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"
 1788301120417,2026-09-01T22:18:40.000000Z,ses_savant_ha2_000,Fix music power-state feedback,"I can click the power button on the home assistant control card for music, and it *does* turn off the music on the savant host, but home assistant thinks the music is still playing and that the media device is still on."
 1788301338388,2026-09-01T22:22:18.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"
+1788302809358,2026-09-01T22:46:49.000000Z,ses_savant_ha2_000,Fix album-art JPEG corruption,"The added media-player.jpg file came from Home Assistant via the media player album art control.  It's clear that there was some JPEG file corruption that occured.  It's not just this file, other album art files are also corrupted.  I suspect it's a problem in reconstructing the image file"
+1788303111900,2026-09-01T22:51:51.000000Z,ses_savant_ha2_000,Commit push and discard JPEG,"commit and push, and discard the same jpg file"

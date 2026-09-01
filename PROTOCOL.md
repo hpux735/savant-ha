@@ -234,8 +234,9 @@ On the current host, elapsed and remaining time are `MM:SS` strings, progress is
 0-100, and pause status is a bool. `CurrentArtworkPath` is an opaque artwork key: fetch
 it through `session/fileDownload` with `{URI:"avc/<component>/<logical>",
 payload:{key:<artwork-key>,type:"nowPlayingArtwork"}}`. The raw binary reply has a
-variable prefix followed by a JPEG stream; locate JPEG SOI/EOI markers rather than assume
-an offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
+file-transfer header on **every** chunk (14 bytes plus its filename/key length), followed
+by JPEG payload; strip every header and locate JPEG SOI/EOI markers rather than assume a
+single offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
 `Pause`, `SkipUp`, `SkipDown`, and `Seek {ProgressValue:<0-100 percent>}`.
 After `PowerOff`, the host can retain all metadata, pause, and progress values; use the
 room's explicit `ActiveService:""` state as the authoritative off signal instead.
