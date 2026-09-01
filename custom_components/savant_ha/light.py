@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import ColorMode, LightEntity
+from homeassistant.components.light import ATTR_RGBW_COLOR, ColorMode, LightEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
@@ -27,8 +27,10 @@ from .const import (
 from .control import (
     dimmer_args,
     dimmer_command,
+    is_color_light,
     is_switch,
     light_address_args,
+    parse_light_color,
     parse_light_state,
     state_name_component,
     state_name_logical,
@@ -54,6 +56,7 @@ class SavantLight(SavantEntity, LightEntity):
         self._addresses = device.get("addresses", "")
         self._device = device
         self._is_switch = is_switch(device)
+        self._is_color = is_color_light(device)
         # Optimistic state: the host pushes per-load state once the client encodes
         # msgpack strings with the legacy raw formats (PROTOCOL.md §1), but the pushed
         # confirmation arrives a round-trip later — remember the last commanded
@@ -61,11 +64,15 @@ class SavantLight(SavantEntity, LightEntity):
         # The pushed state remains authoritative (it overrides the assumed values).
         self._assumed_on: bool | None = None
         self._assumed_brightness: int | None = None
+        self._assumed_rgbw_color: tuple[int, int, int, int] | None = None
         if self._is_switch:
             self._attr_supported_color_modes = {ColorMode.ONOFF}
             self._attr_color_mode = ColorMode.ONOFF
+        elif self._is_color:
+            self._attr_supported_color_modes = {ColorMode.RGBW}
+            self._attr_color_mode = ColorMode.RGBW
         self._attr_unique_id = f"{hub.uid}_light_{device['id']}"
-        if not self._is_switch:
+        if not self._is_switch and not self._is_color:
             self._attr_color_mode = ColorMode.BRIGHTNESS
 
     def _component(self) -> str:
@@ -82,8 +89,10 @@ class SavantLight(SavantEntity, LightEntity):
     def _address_args(self) -> dict[str, Any]:
         return light_address_args(self._addresses)
 
-    def _dimmer_args(self, level: int) -> dict[str, Any]:
-        return dimmer_args(self._device, level)
+    def _dimmer_args(
+        self, level: int, rgbw_color: tuple[int, int, int, int] | None = None
+    ) -> dict[str, Any]:
+        return dimmer_args(self._device, level, rgbw_color)
 
     def _parsed_state(self) -> tuple[bool | None, int | None]:
         if not self._state_name:
@@ -113,6 +122,14 @@ class SavantLight(SavantEntity, LightEntity):
             return max(0, min(255, int(float(level) / 100 * 255)))
         return 255 if self.is_on else 0
 
+    @property
+    def rgbw_color(self) -> tuple[int, int, int, int] | None:
+        """Expose the RGBW channels used by Home Assistant's color controls."""
+        if not self._is_color:
+            return None
+        color = parse_light_color(self._state_name, self._state(self._state_name))
+        return color if color is not None else self._assumed_rgbw_color
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         if self._is_switch:
             await self._service_request(
@@ -129,16 +146,23 @@ class SavantLight(SavantEntity, LightEntity):
         brightness = kwargs.get("brightness")
         if self._state_name and self._addresses:
             level = round(brightness / 255 * 100) if isinstance(brightness, int) else 100
+            requested_color = kwargs.get(ATTR_RGBW_COLOR)
+            rgbw_color = (
+                tuple(requested_color)
+                if self._is_color and isinstance(requested_color, tuple)
+                else self.rgbw_color
+            )
             await self._service_request(
                 dimmer_command(self._device),
                 component=self._component(),
                 service_type=SVC_ENV_LIGHTING,
                 zone=self._room,
                 logical_component=self._logical_component(),
-                request_args=self._dimmer_args(level),
+                request_args=self._dimmer_args(level, rgbw_color),
             )
             self._assumed_on = True
             self._assumed_brightness = brightness if isinstance(brightness, int) else 255
+            self._assumed_rgbw_color = rgbw_color
             self.async_write_ha_state()
             return
         await self._service_request(
@@ -171,7 +195,7 @@ class SavantLight(SavantEntity, LightEntity):
                 service_type=SVC_ENV_LIGHTING,
                 zone=self._room,
                 logical_component=self._logical_component(),
-                request_args=self._dimmer_args(0),
+                request_args=self._dimmer_args(0, self.rgbw_color),
             )
             self._assumed_on = False
             self._assumed_brightness = 0

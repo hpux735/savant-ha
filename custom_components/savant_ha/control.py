@@ -41,6 +41,12 @@ def is_switch(device: dict[str, Any]) -> bool:
     return bool(isinstance(control, dict) and control.get("entity_type") == "Switch")
 
 
+def is_color_light(device: dict[str, Any]) -> bool:
+    """True when the archive state key carries RGBW color state."""
+    state_name = str(device.get("state_name") or "")
+    return "CurrentColor" in state_name or "CurrentBleColor" in state_name
+
+
 def dimmer_command(device: dict[str, Any]) -> str:
     """The load's dimmer verb from the archive, defaulting to ``DimmerSet``."""
     control = device.get("control")
@@ -48,12 +54,14 @@ def dimmer_command(device: dict[str, Any]) -> str:
     return command or VERB_DIMMER_SET
 
 
-def dimmer_args(device: dict[str, Any], level: int) -> dict[str, Any]:
+def dimmer_args(
+    device: dict[str, Any], level: int, rgbw_color: tuple[int, int, int, int] | None = None
+) -> dict[str, Any]:
     """Build the full ``DimmerSet`` ``requestArgs``.
 
-    The archive's ``DimmerSet`` definition names the flat ``bleColorRed/Green/Blue/White``
-    and ``kelvin`` keys, which are required even for ordinary dimmers (where they are
-    ignored); fade/delay/curve are taken from the load's archive record.
+    Standard dimmers retain the archive-derived flat color fields. Color-capable loads
+    use the observed nested ``bleColor`` map, allowing an RGBW update without erasing
+    the existing color when Home Assistant only changes brightness (PROTOCOL.md §6).
     """
     control = device.get("control") if isinstance(device.get("control"), dict) else {}
     args: dict[str, Any] = light_address_args(str(device.get("addresses") or ""))
@@ -62,6 +70,18 @@ def dimmer_args(device: dict[str, Any], level: int) -> dict[str, Any]:
     delay_time = control.get("delay_time")
     args["FadeTime"] = fade_time if fade_time is not None else "0.5"
     args["DelayTime"] = delay_time if delay_time is not None else "0"
+    args["Curve"] = control.get("technology") or "Custom 1"
+    if is_color_light(device):
+        if rgbw_color is not None:
+            red, green, blue, white = (max(0, min(255, int(value))) for value in rgbw_color)
+            args["bleColor"] = {
+                "red": red,
+                "green": green,
+                "blue": blue,
+                "white": white,
+                "kelvin": 0,
+            }
+        return args
     args.update(
         {
             "bleColorRed": 0,
@@ -71,7 +91,6 @@ def dimmer_args(device: dict[str, Any], level: int) -> dict[str, Any]:
             "kelvin": 0,
         }
     )
-    args["Curve"] = control.get("technology") or "Custom 1"
     return args
 
 
@@ -190,6 +209,23 @@ def parse_light_state(state_name: str, value: Any) -> tuple[bool | None, int | N
             return _parse_color(value)
         return None, None
     return None, None
+
+
+def parse_light_color(state_name: str, value: Any) -> tuple[int, int, int, int] | None:
+    """Return the RGBW channels from a ``CurrentColor``/``CurrentBleColor`` state."""
+    if (
+        ("CurrentColor" not in state_name and "CurrentBleColor" not in state_name)
+        or not isinstance(value, str)
+    ):
+        return None
+    parts = value.split("|", 1)[0].split(",")
+    if len(parts) < 4:
+        return None
+    try:
+        channels = [max(0, min(255, int(part.strip()))) for part in parts[:4]]
+    except ValueError:
+        return None
+    return channels[0], channels[1], channels[2], channels[3]
 
 
 def coerce_number(value: Any) -> float | None:

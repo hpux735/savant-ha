@@ -76,6 +76,42 @@ def test_dimmer_args_uses_technology_for_curve():
     assert control.dimmer_args(device, 50)["Curve"] == "Infinite Color"
 
 
+def test_color_dimmer_args_uses_nested_rgbw_color_without_flat_defaults():
+    device = _light(
+        state_name="Savant.Lighting.CurrentColor_6_006",
+        control={"entity_type": "DMX", "technology": "Infinite Color"},
+    )
+    args = control.dimmer_args(device, 50, (255, 64, 32, 16))
+    assert args["bleColor"] == {
+        "red": 255,
+        "green": 64,
+        "blue": 32,
+        "white": 16,
+        "kelvin": 0,
+    }
+    assert "bleColorRed" not in args
+
+
+def test_is_color_light_uses_color_state_names():
+    assert control.is_color_light(
+        _light(state_name="Savant.Lighting.CurrentColor_6_006")
+    )
+    assert control.is_color_light(
+        _light(state_name="Savant.Lighting.CurrentBleColor_2_004")
+    )
+    assert not control.is_color_light(_light())
+
+
+def test_color_dimmer_brightness_only_omits_color_to_preserve_host_state():
+    device = _light(
+        state_name="Savant.Lighting.CurrentColor_6_006",
+        control={"entity_type": "DMX", "technology": "Infinite Color"},
+    )
+    args = control.dimmer_args(device, 50)
+    assert "bleColor" not in args
+    assert "bleColorRed" not in args
+
+
 def test_dimmer_args_includes_flat_ble_color_keys():
     # The archive's DimmerSet definition requires these flat keys even for dimmers.
     args = control.dimmer_args(_light(), 100)
@@ -257,6 +293,13 @@ def test_parse_color_string_without_level_uses_max_channel():
         True,
         128,
     )
+
+
+def test_parse_color_string_extracts_rgbw_channels():
+    assert control.parse_light_color(
+        "Savant.Lighting.CurrentColor_6_006",
+        "083,079,245,016,096,096|6000,096,096|Custom 1",
+    ) == (83, 79, 245, 16)
 
 
 def test_parse_light_state_unrecognized_returns_none():
