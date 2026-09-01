@@ -80,6 +80,9 @@ _RoomsCallback = Callable[[set[str]], None]
 
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
+ARTWORK_TIMEOUT = 10.0
+_JPEG_SOI = b"\xff\xd8\xff"
+_JPEG_EOI = b"\xff\xd9"
 
 # Message keys that must never be written to logs (PII per AGENTS.md).  Includes the
 # host identity/credential fields carried in deviceRecognized (hostSecret/hostUID/
@@ -114,6 +117,17 @@ def _redact(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_redact(v) for v in obj]
     return obj
+
+
+def extract_jpeg(data: bytes) -> bytes | None:
+    """Return the JPEG bounded by SOI/EOI markers in a raw artwork transfer."""
+    start = data.find(_JPEG_SOI)
+    if start < 0:
+        return None
+    end = data.find(_JPEG_EOI, start + len(_JPEG_SOI))
+    if end < 0:
+        return None
+    return data[start : end + len(_JPEG_EOI)]
 
 
 def _log_tls_info(ws: aiohttp.ClientWebSocketResponse) -> None:
@@ -440,6 +454,11 @@ class SavantClient:
         # accumulated here and reassembled once the final frame arrives.
         self._uiconfig_frames: list[bytes] = []
         self._uiconfig_archive: bytes | None = None
+        # Artwork transfers are raw binary frames with no request correlation. Serialize
+        # them and locate JPEG markers instead of assuming the variable host prefix.
+        self._artwork_lock = asyncio.Lock()
+        self._artwork_bytes = bytearray()
+        self._artwork_future: asyncio.Future[bytes | None] | None = None
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
@@ -552,6 +571,38 @@ class SavantClient:
         if request_args:
             message["requestArgs"] = request_args
         await self.request("service/request", [message])
+
+    async def async_get_artwork(
+        self, component: str, logical_component: str, key: str
+    ) -> bytes | None:
+        """Fetch now-playing JPEG artwork (sibling PROTOCOL.md §8.2)."""
+        if not key:
+            return None
+        async with self._artwork_lock:
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[bytes | None] = loop.create_future()
+            self._artwork_bytes = bytearray()
+            self._artwork_future = future
+            try:
+                await self.request(
+                    URI_FILE_DOWNLOAD,
+                    [
+                        {
+                            "URI": f"avc/{component}/{logical_component}",
+                            "payload": {"key": key, "type": "nowPlayingArtwork"},
+                        }
+                    ],
+                )
+                return await asyncio.wait_for(future, ARTWORK_TIMEOUT)
+            except TimeoutError:
+                LOGGER.debug("Savant artwork fetch timed out")
+                return None
+            except (SavantConnectionError, aiohttp.ClientError, OSError):
+                return None
+            finally:
+                if self._artwork_future is future:
+                    self._artwork_future = None
+                    self._artwork_bytes = bytearray()
 
     # ------------------------------------------------------------------ internals
 
@@ -735,6 +786,8 @@ class SavantClient:
         was_connected = self._connected
         self._connected = False
         self._authorized = False
+        if self._artwork_future is not None and not self._artwork_future.done():
+            self._artwork_future.set_result(None)
         if self._auth_task is not None:
             self._auth_task.cancel()
             # CancelledError is a BaseException — suppress it explicitly too.
@@ -795,6 +848,11 @@ class SavantClient:
             await self._ws.ping(KEEPALIVE_BYTE)
 
     def _handle_frame(self, data: bytes) -> None:
+        if self._artwork_future is not None and not self._artwork_future.done() and (
+            self._artwork_bytes or _JPEG_SOI in data
+        ):
+            self._handle_artwork_frame(data)
+            return
         # The config archive is streamed as framed binary frames (not msgpack) — the
         # marker byte 0x01 with flag 0x01/0x81 (PROTOCOL.md §13).
         if data[:1] == b"\x01" and len(data) >= 2 and data[1] in (0x01, 0x81):
@@ -828,6 +886,19 @@ class SavantClient:
             self._emit_rooms(rooms_from_scene_messages(messages))
         else:
             LOGGER.debug("Unhandled Savant URI %r", uri)
+
+    def _handle_artwork_frame(self, data: bytes) -> None:
+        """Accumulate raw artwork chunks and finish when their JPEG ends."""
+        if not self._artwork_bytes:
+            start = data.find(_JPEG_SOI)
+            if start < 0:
+                return
+            self._artwork_bytes.extend(data[start:])
+        else:
+            self._artwork_bytes.extend(data)
+        image = extract_jpeg(bytes(self._artwork_bytes))
+        if image is not None and self._artwork_future is not None:
+            self._artwork_future.set_result(image)
 
     def _handle_archive_frame(self, data: bytes) -> None:
         self._uiconfig_frames.append(data)

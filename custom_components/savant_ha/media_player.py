@@ -40,6 +40,7 @@ _PAUSED = "CurrentPauseStatus"
 _ELAPSED = "CurrentElapsedTime"
 _REMAINING = "CurrentRemainingTime"
 _SEEK_DISABLED = "SeekDisabled"
+_ARTWORK = "CurrentArtworkPath"
 
 
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
@@ -64,6 +65,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
         self._last_media_position: float | None = None
         self._media_position_updated_at: datetime | None = None
+        self._artwork_key: str | None = None
+        self._artwork: bytes | None = None
 
     def _key(self, attr: str) -> str:
         return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
@@ -151,6 +154,29 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     @property
     def media_position_updated_at(self) -> datetime | None:
         return self._media_position_updated_at
+
+    @property
+    def media_image_hash(self) -> str | None:
+        value = self._value(_ARTWORK)
+        return value if isinstance(value, str) and value else None
+
+    async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+        key = self.media_image_hash
+        if key is None:
+            self._artwork_key = None
+            self._artwork = None
+            return None, None
+        if self._artwork_key != key:
+            artwork = await self.hub.client.async_get_artwork(
+                self._component, self._logical_component, key
+            )
+            if artwork is not None:
+                self._artwork_key = key
+                self._artwork = artwork
+            else:
+                self._artwork_key = None
+                self._artwork = None
+        return self._artwork, "image/jpeg" if self._artwork is not None else None
 
     async def _media_request(
         self, request: str, request_args: dict[str, int] | None = None

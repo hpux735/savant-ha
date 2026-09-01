@@ -249,6 +249,39 @@ def test_audio_zone_state_keys_keep_component_identity():
     assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.ZonesActiveIn" in keys
 
 
+def test_extract_jpeg_discards_raw_transfer_prefix_and_suffix():
+    assert sc.extract_jpeg(b"header\x00\xff\xd8\xffimage\xff\xd9trailer") == (
+        b"\xff\xd8\xffimage\xff\xd9"
+    )
+    assert sc.extract_jpeg(b"header\x00\xff\xd8\xffpartial") is None
+
+
+def test_artwork_request_collects_jpeg():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+            client._handle_artwork_frame(b"prefix\xff\xd8\xffjpeg\xff\xd9")
+
+        client.request = fake_request  # type: ignore[assignment]
+        return await client.async_get_artwork("Music", "Audio Zone 1", "artwork-key")
+
+    assert asyncio.run(run()) == b"\xff\xd8\xffjpeg\xff\xd9"
+    assert sent == [
+        (
+            "session/fileDownload",
+            [
+                {
+                    "URI": "avc/Music/Audio Zone 1",
+                    "payload": {"key": "artwork-key", "type": "nowPlayingArtwork"},
+                }
+            ],
+        )
+    ]
+
+
 def test_default_music_subscriptions_include_both_observed_key_shapes():
     keys = build_default_subscribe_keys()
     assert "Music.Audio Zone 1.CurrentSongName" in keys

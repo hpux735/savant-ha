@@ -231,9 +231,11 @@ observed forms. Attributes include `CurrentSongName`, `CurrentArtistName`,
 `CurrentTransportActions`, `SeekDisabled`, `CurrentVolume`, and `IsMuted`.
 
 On the current host, elapsed and remaining time are `MM:SS` strings, progress is an int
-0-100, pause status is a bool, and `CurrentArtworkPath` is an opaque hash rather than a
-fetchable URL. Do not expose it as Home Assistant artwork until its image-fetch protocol
-is captured. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
+0-100, and pause status is a bool. `CurrentArtworkPath` is an opaque artwork key: fetch
+it through `session/fileDownload` with `{URI:"avc/<component>/<logical>",
+payload:{key:<artwork-key>,type:"nowPlayingArtwork"}}`. The raw binary reply has a
+variable prefix followed by a JPEG stream; locate JPEG SOI/EOI markers rather than assume
+an offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
 `Pause`, `SkipUp`, `SkipDown`, and `Seek {ProgressValue:<0-100 percent>}`.
 
 ### 5.4 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
@@ -301,8 +303,7 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
    `PROTOCOL.md` §6.1.1 and §7.5: `ShadeLevel` is 0 (closed) through 100 (open),
    `ShadeSet` updates may be asynchronous and controller positions may quantize by ±1.
 4. Music browse/search returns generic UI nodes, but the capture does not establish an
-   action to select a result for playback. `CurrentArtworkPath` is an opaque hash; its
-   image fetch operation is likewise not yet captured.
+   action to select a result for playback.
 5. ~~`state/update` delta vs snapshot semantics~~ — RESOLVED: registration returns an
    immediate per-key snapshot (empty-string value when idle), then delta-only pushes
    on change (§5.2; sibling PROTOCOL.md §6.6).

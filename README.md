@@ -75,8 +75,7 @@ These are inherited from the sibling protocol document — see `PROTOCOL.md` §7
   `DimmerSet` args; only brightness/on-off are wired so far.
 - **Shades / fans / door-locks** have observed state keys but no captured set-verbs, so
   their entities are read-only for now.
-- **Media artwork and library browsing** remain unavailable. Artwork state is an opaque
-  host hash with no captured image-fetch operation; browse/search has no captured action
+- **Media library browsing** remains unavailable: browse/search has no captured action
   that selects a result for playback. Mute/repeat are one-way (`MuteOn`/`RepeatOn`) and
   are therefore not advertised as HA controls.
 - **Scenes** don't have a confirmed "run scene" verb yet.

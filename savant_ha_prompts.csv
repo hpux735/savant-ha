@@ -76,3 +76,6 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788298493357,2026-09-01T21:34:53.000000Z,ses_savant_ha2_000,Continue,"continue"
 1788298493357,2026-09-01T21:34:53.000000Z,ses_savant_ha2_000,Continue,"continue"
 1788299200417,2026-09-01T21:46:40.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"
+1788299719011,2026-09-01T21:55:19.000000Z,ses_savant_ha2_000,Ask about album-art documentation,"we're not getting album art from the savant host; that would be really nice.  Is it documented in the reverse engineering repo?"
+1788300364358,2026-09-01T22:06:04.000000Z,ses_savant_ha2_000,Album-art documentation available,"Ok, the information about loading album art has been added"
+1788300699877,2026-09-01T22:11:39.000000Z,ses_savant_ha2_000,Commit and push,"commit and push"
