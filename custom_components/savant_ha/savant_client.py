@@ -21,6 +21,7 @@ import gzip
 import socket
 import ssl
 import time
+import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from aiohttp import WSMsgType, hdrs
 from . import uiconfig
 from .const import (
     DASHBOARD_REQUEST_SCENES,
+    DASHBOARD_REQUEST_APPLY_SCENE,
     DASHBOARD_STATE_RECENT_SERVICES,
     DEVICE_APP,
     DEVICE_MAKE,
@@ -70,6 +72,7 @@ from .const import (
     USER_DATA_IMAGE_STATES,
     USER_DATA_INITIAL_STATES,
     SCENES_STATE_KEY,
+    SCENE_VERSION,
     build_default_subscribe_keys,
     new_uid,
     room_from_state_key,
@@ -83,6 +86,7 @@ _ScenesCallback = Callable[[dict[str, dict[str, Any]]], None]
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
 ARTWORK_TIMEOUT = 10.0
+SCENE_ACTIVATION_TIMEOUT = 5.0
 _JPEG_SOI = b"\xff\xd8\xff"
 _JPEG_EOI = b"\xff\xd9"
 
@@ -163,10 +167,6 @@ class SavantError(Exception):
 
 class SavantConnectionError(SavantError):
     """Raised when the control channel is not connected."""
-
-
-class SavantSceneActivationUnsupported(SavantError):
-    """Raised until a scene activation request is observed on the wire."""
 
 
 @dataclass
@@ -476,6 +476,7 @@ class SavantClient:
         self._artwork_bytes = bytearray()
         self._artwork_image: bytes | None = None
         self._artwork_future: asyncio.Future[bytes | None] | None = None
+        self._pending_scene_requests: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
@@ -591,14 +592,30 @@ class SavantClient:
         await self.request("service/request", [message])
 
     async def activate_scene(self, scene_id: str) -> None:
-        """Activate a dashboard scene once its native request is known.
-
-        No captured request invokes a saved scene (PROTOCOL.md §9.3).  Keep scene IDs
-        wired to this boundary, but do not synthesize a dashboard or service request.
-        """
-        raise SavantSceneActivationUnsupported(
-            f"Scene activation is not yet observed for scene {scene_id!r}"
-        )
+        """Apply a saved dashboard scene and wait for its correlated RPC result."""
+        request_id = uuid.uuid4().hex
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._pending_scene_requests[request_id] = future
+        try:
+            await self.request(
+                URI_DASHBOARD_REQUEST,
+                [
+                    {
+                        "request": DASHBOARD_REQUEST_APPLY_SCENE,
+                        "requestId": request_id,
+                        "requestArgs": {"id": scene_id, "version": SCENE_VERSION},
+                    }
+                ],
+            )
+            result = await asyncio.wait_for(future, SCENE_ACTIVATION_TIMEOUT)
+            if not result.get("success") or result.get("errorCode") != 0:
+                raise SavantError(
+                    f"Savant scene activation failed (error {result.get('errorCode', 'unknown')})"
+                )
+        except TimeoutError as err:
+            raise SavantError("Savant scene activation timed out") from err
+        finally:
+            self._pending_scene_requests.pop(request_id, None)
 
     async def async_get_artwork(
         self, component: str, logical_component: str, key: str
@@ -822,6 +839,10 @@ class SavantClient:
         self._authorized = False
         if self._artwork_future is not None and not self._artwork_future.done():
             self._artwork_future.set_result(None)
+        for future in self._pending_scene_requests.values():
+            if not future.done():
+                future.set_exception(SavantConnectionError("connection lost"))
+        self._pending_scene_requests.clear()
         if self._auth_task is not None:
             self._auth_task.cancel()
             # CancelledError is a BaseException — suppress it explicitly too.
@@ -918,6 +939,8 @@ class SavantClient:
             LOGGER.debug("Savant featureLock: %s", _redact(messages))
         elif uri in (URI_DASHBOARD_UPDATE, URI_DASHBOARD_REQUEST):
             self._emit_rooms(rooms_from_scene_messages(messages))
+            if uri == URI_DASHBOARD_REQUEST:
+                self._handle_scene_activation_response(messages)
             if uri == URI_DASHBOARD_UPDATE:
                 scenes = scene_summaries_from_messages(messages)
                 if scenes is not None and self.on_scenes_update is not None:
@@ -982,6 +1005,18 @@ class SavantClient:
         start_zone = first.get("startZone")
         if isinstance(start_zone, str) and start_zone:
             self._emit_rooms({start_zone})
+
+    def _handle_scene_activation_response(self, messages: list[Any]) -> None:
+        """Resolve observed ``ApplyScene`` dashboard RPC responses (PROTOCOL.md §9.3)."""
+        for message in messages:
+            if not isinstance(message, dict) or message.get("request") != DASHBOARD_REQUEST_APPLY_SCENE:
+                continue
+            request_id = message.get("requestId")
+            if not isinstance(request_id, str):
+                continue
+            future = self._pending_scene_requests.get(request_id)
+            if future is not None and not future.done():
+                future.set_result(message)
 
     def _emit_rooms(self, rooms: set[str]) -> None:
         rooms = {r for r in rooms if isinstance(r, str) and r}

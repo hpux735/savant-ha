@@ -16,7 +16,9 @@ from custom_components.savant_ha.const import (
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
     ENVELOPE_KEY_USER,
+    DASHBOARD_REQUEST_APPLY_SCENE,
     SCENES_STATE_KEY,
+    SCENE_VERSION,
     SVC_ENV_HVAC,
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
@@ -586,6 +588,42 @@ def test_dashboard_scene_update_notifies_inventory_callback():
     )
 
     assert seen == [{"scene-1": {"id": "scene-1", "name": "Morning"}}]
+
+
+def test_activate_scene_sends_observed_request_and_waits_for_response():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]]]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(client.activate_scene("scene-1"))
+        await asyncio.sleep(0)
+        request_id = sent[0][1][0]["requestId"]
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": "dis/dashboard/request",
+                    "messages": [
+                        {
+                            "request": DASHBOARD_REQUEST_APPLY_SCENE,
+                            "requestId": request_id,
+                            "success": True,
+                            "errorCode": 0,
+                        }
+                    ],
+                }
+            )
+        )
+        await task
+
+    asyncio.run(run())
+    assert sent[0][0] == "dis/dashboard/request"
+    message = sent[0][1][0]
+    assert message["request"] == DASHBOARD_REQUEST_APPLY_SCENE
+    assert message["requestArgs"] == {"id": "scene-1", "version": SCENE_VERSION}
 
 
 if __name__ == "__main__":

@@ -262,8 +262,11 @@ The initial `dis/dashboard/update` is the complete current scene-summary list; s
 include stable `id` and `name`, so integrations can reconcile scene entities as host scenes
 are created or removed. Creation was observed to push a replacement list. A deletion push
 has not been observed, so deletion reconciliation relies on a future list update or
-reconnection. No scene activation request has been captured; do not invent one from the
-summary `actions` or scene definition (sibling PROTOCOL.md §9).
+reconnection. Activate a saved scene through `dis/dashboard/request` with
+`{request:"ApplyScene",requestId:<string>,requestArgs:{id:<scene-id>,version:"2.0"}}`.
+The correlated same-URI response reports `success:true,errorCode:0`; relevant device state
+updates are the confirmation of the scene's effect. Do not derive activation from summary
+`actions` or scene definition (sibling PROTOCOL.md §9.3).
 
 ## 5b. Config archive (authoritative device inventory)
 

@@ -106,6 +106,9 @@ USER_DATA_INITIAL_STATES = (
 USER_DATA_IMAGE_STATES = ("global.image.update", "user.image.update")
 # State key the host pushes the current scene list under (PROTOCOL.md §9.1).
 SCENES_STATE_KEY = "scenesAndFoldersReduced"
+# Dashboard RPC activation request and observed fixed scene schema version (PROTOCOL.md §9.3).
+DASHBOARD_REQUEST_APPLY_SCENE = "ApplyScene"
+SCENE_VERSION = "2.0"
 
 # ---- Service/request verbs (PROTOCOL.md §6) -------------------------------
 VERB_SET_VOLUME = "SetVolume"

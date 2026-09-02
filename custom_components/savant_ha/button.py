@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .entity import SavantEntity
 from .hub import SavantHub
-from .savant_client import SavantSceneActivationUnsupported
+from .savant_client import SavantError
 
 
 class SavantSceneButton(SavantEntity, ButtonEntity):
@@ -31,7 +31,7 @@ class SavantSceneButton(SavantEntity, ButtonEntity):
     async def async_press(self) -> None:
         try:
             await self.hub.client.activate_scene(self._scene_id)
-        except SavantSceneActivationUnsupported as err:
+        except SavantError as err:
             raise HomeAssistantError(str(err)) from err
 
 
