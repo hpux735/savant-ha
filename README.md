@@ -63,6 +63,7 @@ extra room names) live behind the integration's **Configure** button.
 | Cover | `ShadeEntities` / `GarageEntities` | shade open/close/stop and position |
 | Fan | `FanEntities` | on/off (read-only for now) |
 | Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: now-playing, power, volume, transport, album art; Apple TV: archive-declared power, volume, and play/pause |
+| Scene | Savant dashboard `scenesAndFoldersReduced` updates | native `scene.turn_on` activation |
 | Sensor | `global.CurrentTemperature`, `<room>.RoomCurrentTemperature` | temperature |
 
 ## Limitations / open questions
@@ -78,7 +79,6 @@ These are inherited from the sibling protocol document — see `PROTOCOL.md` §7
 - **Media library browsing** remains unavailable: browse/search has no captured action
   that selects a result for playback. Mute/repeat are one-way (`MuteOn`/`RepeatOn`) and
   are therefore not advertised as HA controls.
-- **Scenes** don't have a confirmed "run scene" verb yet.
 
 Temperature is assumed Fahrenheit (matching the observed `SchedulerSettings` scale).
 
