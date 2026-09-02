@@ -246,7 +246,11 @@ The current host's config archive declares `SVC_AV_APPLEREMOTEMEDIASERVER` and
 `SVC_AV_APPLEREMOTEMEDIASERVERAUDIO` endpoints for Apple TV. Their archive request maps
 list `PowerOn`, `PowerOff`, `SetVolume`, `Play`, `Pause`, `Home`, `Menu`, and directional
 OSD controls. The integration exposes only the media-player controls Home Assistant can
-represent (power, volume, play/pause); no Apple TV state or metadata key has been captured.
+represent (power, volume, play/pause). The observed `<room>.ActiveService` value is the
+full archive service ID and authoritatively identifies the active Apple TV endpoint; its
+empty value means the room is idle. `LastActiveService` retains the previous endpoint. No
+Apple TV-specific state or metadata key has been captured, so playback state and volume are
+optimistically reflected until `ActiveService` changes.
 
 ### 5.5 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
 

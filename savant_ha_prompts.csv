@@ -90,3 +90,6 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788312344000,2026-09-02T01:25:44.000000Z,ses_savant_ha2_000,Add Apple TV endpoints,"The music servers and endpoints look great!  But, we still don't have AppleTV endpoints in there.  Oh, and I should mention, that there might not only be AppleTVs.  I think it can be generic and be things like blueray players, cable tv, satellite, whatever.  I think it's OK if those are out of scope and we focus on AppleTV now, though"
 1788328016000,2026-09-02T05:46:56.000000Z,ses_savant_ha2_000,Check Apple TV commit status,"is it committed and pushed?"
 1788328069000,2026-09-02T05:47:49.000000Z,ses_savant_ha2_000,Commit and push Apple TV endpoints,"Ok, go ahead and commit and push"
+1788328554000,2026-09-02T05:55:54.000000Z,ses_savant_ha2_000,Fix Apple TV control card,"I can turn on the apple tv using home assistant now, which is cool, but I can't turn it back off, and there's no volume control or play/pause/etc. controls"
+1788359440000,2026-09-02T14:30:40.000000Z,ses_savant_ha2_000,Investigate Apple TV active-zone state,"is there no state where you can check what zones the apple tv is active in?"
+1788359819000,2026-09-02T14:36:59.000000Z,ses_savant_ha2_000,Commit and push Apple TV feedback,"Commit and push"
