@@ -31,6 +31,7 @@ from .const import (
     CONF_USERNAME,
     DOMAIN,
     LOGGER,
+    SVC_AV_SAVANTMUSIC,
     audio_zone_state_keys,
     build_default_subscribe_keys,
     device_state_keys,
@@ -86,6 +87,9 @@ class SavantHub:
                     device.get("type") == "media_player"
                     and device.get("component")
                     and device.get("zone")
+                    and isinstance(device.get("control"), dict)
+                    and device["control"].get("service_type", SVC_AV_SAVANTMUSIC)
+                    == SVC_AV_SAVANTMUSIC
                 ):
                     subscribe_keys.extend(
                         audio_zone_state_keys(device["component"], device["zone"])

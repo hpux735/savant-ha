@@ -35,6 +35,15 @@ def _make_sqlite_bytes() -> bytes:
         "CREATE VIEW ServiceImplementationZonedService AS SELECT * "
         "FROM ServiceImplementationServiceResources WHERE pathOrder = 0"
     )
+    conn.execute(
+        "CREATE TABLE ServiceImplementationRequests "
+        "(id INTEGER PRIMARY KEY, request TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE ServiceImplementationRequestMap "
+        "(id INTEGER PRIMARY KEY, ServiceImplementationZonedService_id INTEGER, "
+        "ServiceImplementationRequests_id INTEGER)"
+    )
     conn.execute("INSERT INTO Rooms VALUES (1,'Kitchen','r1'),(2,'Living Room','r2')")
     conn.execute(
         "INSERT INTO Zones VALUES (10,'Kitchen','Environmental',"
@@ -64,7 +73,17 @@ def _make_sqlite_bytes() -> bytes:
         "'Living Room Sound Bar','Kitchen-Living-Room-Sound-Bar-AVB-Stream-2','2',"
         "'Living Room Sound Bar',0),"
         " (4,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Transport hop',"
-        "'Kitchen-Living-Room-Sound-Bar-AVB-Stream-2','2','Transport hop',1)"
+        "'Kitchen-Living-Room-Sound-Bar-AVB-Stream-2','2','Transport hop',1),"
+        " (5,'Kitchen','AppleTV1','Media_server','SVC_AV_APPLEREMOTEMEDIASERVER',"
+        "'AppleTV1 Control','Kitchen-AppleTV1-Media-server-1','1','AppleTV1 Control',0)"
+    )
+    conn.execute(
+        "INSERT INTO ServiceImplementationRequests VALUES"
+        " (1,'PowerOn'),(2,'PowerOff'),(3,'SetVolume'),(4,'Play'),(5,'Pause')"
+    )
+    conn.execute(
+        "INSERT INTO ServiceImplementationRequestMap VALUES"
+        " (1,5,1),(2,5,2),(3,5,3),(4,5,4),(5,5,5)"
     )
     data = conn.serialize()
     conn.close()
@@ -129,8 +148,12 @@ def test_reassemble_and_parse_devices():
     assert [(d.name, d.room, d.component, d.zone) for d in media] == [
         ("Music", "Kitchen", "Music", "Audio Zone 1"),
         ("Living Room Sound Bar", "Kitchen", "Living Room Sound Bar", "AVB Stream 2"),
+        ("AppleTV1 Control", "Kitchen", "AppleTV1", "Media_server"),
     ]
-    assert [d.extra["variant_id"] for d in media] == ["1", "2"]
+    assert [d.extra["variant_id"] for d in media] == ["1", "2", "1"]
+    apple_tv = media[-1]
+    assert apple_tv.extra["service_type"] == "SVC_AV_APPLEREMOTEMEDIASERVER"
+    assert apple_tv.extra["requests"] == ["PowerOn", "PowerOff", "SetVolume", "Play", "Pause"]
 
 
 def test_reassemble_ignores_non_archive_frames():

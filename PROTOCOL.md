@@ -241,7 +241,14 @@ single offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume
 After `PowerOff`, the host can retain all metadata, pause, and progress values; use the
 room's explicit `ActiveService:""` state as the authoritative off signal instead.
 
-### 5.4 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
+### 5.4 Apple TV endpoints
+The current host's config archive declares `SVC_AV_APPLEREMOTEMEDIASERVER` and
+`SVC_AV_APPLEREMOTEMEDIASERVERAUDIO` endpoints for Apple TV. Their archive request maps
+list `PowerOn`, `PowerOff`, `SetVolume`, `Play`, `Pause`, `Home`, `Menu`, and directional
+OSD controls. The integration exposes only the media-player controls Home Assistant can
+represent (power, volume, play/pause); no Apple TV state or metadata key has been captured.
+
+### 5.5 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
 
 ## 5b. Config archive (authoritative device inventory)
 

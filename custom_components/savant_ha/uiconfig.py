@@ -280,11 +280,15 @@ def _parse_media_zones(
     name_col = _pick(cols, ("serviceNameAlias", "alias", "name"))
     service_col = _pick(cols, ("service", "serviceID", "service_id"))
     variant_col = _pick(cols, ("serviceVariantID", "serviceVariantId", "variantID"))
+    requests = _service_requests(conn, tables)
     seen: set[str | tuple[str, str, str]] = set()
     cursor = conn.execute(f'SELECT * FROM "{source}"')
     for row in cursor:
         d = _row_to_dict(cursor, row)
-        if str(d.get(svc_col) or "") != "SVC_AV_SAVANTMUSIC":
+        service_type = str(d.get(svc_col) or "")
+        if service_type != "SVC_AV_SAVANTMUSIC" and not service_type.startswith(
+            "SVC_AV_APPLEREMOTEMEDIASERVER"
+        ):
             continue
         if source == sir and path_order_col and str(d.get(path_order_col)) != "0":
             continue
@@ -308,8 +312,38 @@ def _parse_media_zones(
                 zone=logical,
                 component=component,
                 extra={
-                    "service_id": service or "SVC_AV_SAVANTMUSIC",
+                    "service_id": service,
+                    "service_type": service_type,
                     "variant_id": str(d.get(variant_col) or "1") if variant_col else "1",
+                    "requests": requests.get(str(d.get("id")), []),
                 },
             )
         )
+
+
+def _service_requests(conn: sqlite3.Connection, tables: list[str]) -> dict[str, list[str]]:
+    """Return the archive-declared request names for each zoned-service endpoint."""
+    request_map = "ServiceImplementationRequestMap"
+    requests = "ServiceImplementationRequests"
+    if request_map not in tables or requests not in tables:
+        return {}
+    map_cols = _table_columns(conn, request_map)
+    request_cols = _table_columns(conn, requests)
+    endpoint_col = _pick(map_cols, ("ServiceImplementationZonedService_id",))
+    request_id_col = _pick(map_cols, ("ServiceImplementationRequests_id",))
+    request_name_col = _pick(request_cols, ("request",))
+    if not (endpoint_col and request_id_col and request_name_col):
+        return {}
+    try:
+        cursor = conn.execute(
+            f'''SELECT m."{endpoint_col}", r."{request_name_col}"
+            FROM "{request_map}" m
+            JOIN "{requests}" r ON r.id = m."{request_id_col}"'''
+        )
+    except sqlite3.Error:
+        return {}
+    result: dict[str, list[str]] = {}
+    for endpoint_id, request in cursor:
+        if request:
+            result.setdefault(str(endpoint_id), []).append(str(request))
+    return result

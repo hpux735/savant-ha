@@ -44,7 +44,7 @@ _ARTWORK = "CurrentArtworkPath"
 
 
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
-    """A single Savant music source in one room."""
+    """A single archive-derived AV endpoint in one room."""
 
     def __init__(
         self,
@@ -63,9 +63,21 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._logical_component = logical_component
         self._room = str(device.get("room") or "")
         control = device.get("control")
-        self._variant_id = (
-            str(control.get("variant_id") or "1") if isinstance(control, dict) else "1"
-        )
+        control = control if isinstance(control, dict) else {}
+        self._variant_id = str(control.get("variant_id") or "1")
+        self._service_type = str(control.get("service_type") or SVC_AV_SAVANTMUSIC)
+        self._requests = set(control.get("requests") or ())
+        if self._service_type == SVC_AV_SAVANTMUSIC and not self._requests:
+            self._requests = {
+                VERB_POWER_ON,
+                VERB_POWER_OFF,
+                VERB_SET_VOLUME,
+                VERB_PLAY,
+                VERB_PAUSE,
+                VERB_SKIP_UP,
+                VERB_SKIP_DOWN,
+                VERB_SEEK,
+            }
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
         self._last_media_position: float | None = None
         self._media_position_updated_at: datetime | None = None
@@ -85,7 +97,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     def _handle_coordinator_update(self) -> None:
         # A nonempty room service confirms a later external/native power-on after an
         # optimistic PowerOff. Empty ActiveService is the host's authoritative idle state.
-        if self._state(f"{self._room}.ActiveService"):
+        if self._service_type == SVC_AV_SAVANTMUSIC and self._state(f"{self._room}.ActiveService"):
             self._power_off_requested = False
         position = self.media_position
         if position != self._last_media_position:
@@ -96,7 +108,9 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     # ------------------------------------------------------------ media player
 
     @property
-    def state(self) -> MediaPlayerState:
+    def state(self) -> MediaPlayerState | None:
+        if self._service_type != SVC_AV_SAVANTMUSIC:
+            return None
         if self._power_off_requested or self._state(f"{self._room}.ActiveService") == "":
             return MediaPlayerState.OFF
         has_media = bool(self._value(_SONG) or self._value(_ARTIST))
@@ -110,16 +124,22 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
-        features = (
-            MediaPlayerEntityFeature.TURN_ON
-            | MediaPlayerEntityFeature.TURN_OFF
-            | MediaPlayerEntityFeature.VOLUME_SET
-            | MediaPlayerEntityFeature.PLAY
-            | MediaPlayerEntityFeature.PAUSE
-            | MediaPlayerEntityFeature.NEXT_TRACK
-            | MediaPlayerEntityFeature.PREVIOUS_TRACK
-        )
-        if self._value(_SEEK_DISABLED) is False:
+        features = MediaPlayerEntityFeature(0)
+        if VERB_POWER_ON in self._requests:
+            features |= MediaPlayerEntityFeature.TURN_ON
+        if VERB_POWER_OFF in self._requests:
+            features |= MediaPlayerEntityFeature.TURN_OFF
+        if VERB_SET_VOLUME in self._requests:
+            features |= MediaPlayerEntityFeature.VOLUME_SET
+        if VERB_PLAY in self._requests:
+            features |= MediaPlayerEntityFeature.PLAY
+        if VERB_PAUSE in self._requests:
+            features |= MediaPlayerEntityFeature.PAUSE
+        if VERB_SKIP_UP in self._requests:
+            features |= MediaPlayerEntityFeature.NEXT_TRACK
+        if VERB_SKIP_DOWN in self._requests:
+            features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
+        if VERB_SEEK in self._requests and self._value(_SEEK_DISABLED) is False:
             features |= MediaPlayerEntityFeature.SEEK
         return features
 
@@ -172,6 +192,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         return value if isinstance(value, str) and value else None
 
     async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+        if self._service_type != SVC_AV_SAVANTMUSIC:
+            return None, None
         key = self.media_image_hash
         if key is None:
             self._artwork_key = None
@@ -195,7 +217,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         await self._service_request(
             request,
             component=self._component,
-            service_type=SVC_AV_SAVANTMUSIC,
+            service_type=self._service_type,
             zone=self._room,
             logical_component=self._logical_component,
             variant_id=self._variant_id,
@@ -203,33 +225,49 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         )
 
     async def async_turn_on(self) -> None:
+        if VERB_POWER_ON not in self._requests:
+            return
         await self._media_request(VERB_POWER_ON)
         self._power_off_requested = False
         self.async_write_ha_state()
 
     async def async_turn_off(self) -> None:
+        if VERB_POWER_OFF not in self._requests:
+            return
         await self._media_request(VERB_POWER_OFF)
         self._power_off_requested = True
         self.async_write_ha_state()
 
     async def async_set_volume_level(self, volume: float) -> None:
+        if VERB_SET_VOLUME not in self._requests:
+            return
         await self._media_request(VERB_SET_VOLUME, {"VolumeValue": int(round(volume * 100))})
 
     async def async_media_play(self) -> None:
+        if VERB_PLAY not in self._requests:
+            return
         await self._media_request(VERB_PLAY)
         self._power_off_requested = False
         self.async_write_ha_state()
 
     async def async_media_pause(self) -> None:
+        if VERB_PAUSE not in self._requests:
+            return
         await self._media_request(VERB_PAUSE)
 
     async def async_media_next_track(self) -> None:
+        if VERB_SKIP_UP not in self._requests:
+            return
         await self._media_request(VERB_SKIP_UP)
 
     async def async_media_previous_track(self) -> None:
+        if VERB_SKIP_DOWN not in self._requests:
+            return
         await self._media_request(VERB_SKIP_DOWN)
 
     async def async_media_seek(self, position: float) -> None:
+        if VERB_SEEK not in self._requests:
+            return
         duration = self.media_duration
         if duration is None or duration <= 0:
             return

@@ -87,3 +87,6 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788304542000,2026-09-01T23:15:42.000000Z,ses_savant_ha2_000,Continue source-player implementation,"Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
 1788306447000,2026-09-01T23:47:27.000000Z,ses_savant_ha2_000,Fix stale music source discovery,"We're still getting only one music player when there should be two in most zones, and they're still named badly."
 1788308001000,2026-09-02T00:13:21.000000Z,ses_savant_ha2_000,Commit and push source-player refresh,"commit and push if it's not already"
+1788312344000,2026-09-02T01:25:44.000000Z,ses_savant_ha2_000,Add Apple TV endpoints,"The music servers and endpoints look great!  But, we still don't have AppleTV endpoints in there.  Oh, and I should mention, that there might not only be AppleTVs.  I think it can be generic and be things like blueray players, cable tv, satellite, whatever.  I think it's OK if those are out of scope and we focus on AppleTV now, though"
+1788328016000,2026-09-02T05:46:56.000000Z,ses_savant_ha2_000,Check Apple TV commit status,"is it committed and pushed?"
+1788328069000,2026-09-02T05:47:49.000000Z,ses_savant_ha2_000,Commit and push Apple TV endpoints,"Ok, go ahead and commit and push"
