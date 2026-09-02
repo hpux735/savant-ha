@@ -107,6 +107,8 @@ be committed anywhere.
   document assumptions explicitly (open questions live in `PROTOCOL.md` § "Open
   questions").
 - Keep the prompt CSV updated whenever a prompt meaningfully changes the code.
-- Commit and push at the end of each prompt, with the prompt quoted in the commit message.
+- After each prompt containing a declarative implementation command, commit and push its
+  resulting changes before proceeding to another prompt. Keep this relationship 1:1 where
+  feasible, and quote or record the prompt verbatim in `savant_ha_prompts.csv`.
 - Keep temporary/scratch files under `/tmp/` or the project directory — **do not** use
   `/var/...` paths (per the user's explicit instruction).

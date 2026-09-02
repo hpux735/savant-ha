@@ -236,7 +236,8 @@ it through `session/fileDownload` with `{URI:"avc/<component>/<logical>",
 payload:{key:<artwork-key>,type:"nowPlayingArtwork"}}`. The raw binary reply has a
 file-transfer header on **every** chunk (14 bytes plus its filename/key length), followed
 by JPEG payload; strip every header and locate JPEG SOI/EOI markers rather than assume a
-single offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume`, `Play`,
+single offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume` (raw
+0-50, mapped to Home Assistant's 0-100 display scale), `Play`,
 `Pause`, `SkipUp`, `SkipDown`, and `Seek {ProgressValue:<0-100 percent>}`.
 After `PowerOff`, the host can retain all metadata, pause, and progress values; use the
 room's explicit `ActiveService:""` state as the authoritative off signal instead.
@@ -244,8 +245,9 @@ room's explicit `ActiveService:""` state as the authoritative off signal instead
 ### 5.4 Apple TV endpoints
 The current host's config archive declares `SVC_AV_APPLEREMOTEMEDIASERVER` and
 `SVC_AV_APPLEREMOTEMEDIASERVERAUDIO` endpoints for Apple TV. Their archive request maps
-list `PowerOn`, `PowerOff`, `SetVolume`, `Play`, `Pause`, `Home`, `Menu`, and directional
-OSD controls. The integration exposes only the media-player controls Home Assistant can
+list `PowerOn`, `PowerOff`, `SetVolume`, `Play`, `Pause`, `Home`, `Menu`, directional OSD
+controls, and `StopRepeat`. The native app sends `StopRepeat` immediately after `Play`;
+the integration does the same. It exposes only the media-player controls Home Assistant can
 represent (power, volume, play/pause). The observed `<room>.ActiveService` value is the
 full archive service ID and authoritatively identifies the active Apple TV endpoint; its
 empty value means the room is idle. `LastActiveService` retains the previous endpoint. No

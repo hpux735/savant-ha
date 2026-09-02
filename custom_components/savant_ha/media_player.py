@@ -41,6 +41,8 @@ _ELAPSED = "CurrentElapsedTime"
 _REMAINING = "CurrentRemainingTime"
 _SEEK_DISABLED = "SeekDisabled"
 _ARTWORK = "CurrentArtworkPath"
+_RAW_VOLUME_MAX = 50  # PROTOCOL.md §5.4 / sibling PROTOCOL.md §6.1, §7.2.
+_VERB_STOP_REPEAT = "StopRepeat"  # sibling PROTOCOL.md §7.1.1.
 
 
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
@@ -175,9 +177,9 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     @property
     def volume_level(self) -> float | None:
-        value = self._value("CurrentVolume")
+        value = self._state(f"{self._room}.CurrentVolume", self._value("CurrentVolume"))
         if isinstance(value, (int, float)):
-            return max(0.0, min(1.0, float(value) / 100.0))
+            return max(0.0, min(1.0, float(value) / _RAW_VOLUME_MAX))
         return self._optimistic_volume
 
     @property
@@ -253,7 +255,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         if VERB_SET_VOLUME not in self._requests:
             return
-        await self._media_request(VERB_SET_VOLUME, {"VolumeValue": int(round(volume * 100))})
+        await self._media_request(
+            VERB_SET_VOLUME,
+            {"VolumeValue": int(round(volume * _RAW_VOLUME_MAX))},
+        )
         self._optimistic_volume = volume
         self.async_write_ha_state()
 
@@ -261,6 +266,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if VERB_PLAY not in self._requests:
             return
         await self._media_request(VERB_PLAY)
+        if self._service_type != SVC_AV_SAVANTMUSIC and _VERB_STOP_REPEAT in self._requests:
+            await self._media_request(_VERB_STOP_REPEAT)
         self._power_off_requested = False
         self._optimistic_state = MediaPlayerState.PLAYING
         self.async_write_ha_state()

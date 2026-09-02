@@ -93,3 +93,6 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1788328554000,2026-09-02T05:55:54.000000Z,ses_savant_ha2_000,Fix Apple TV control card,"I can turn on the apple tv using home assistant now, which is cool, but I can't turn it back off, and there's no volume control or play/pause/etc. controls"
 1788359440000,2026-09-02T14:30:40.000000Z,ses_savant_ha2_000,Investigate Apple TV active-zone state,"is there no state where you can check what zones the apple tv is active in?"
 1788359819000,2026-09-02T14:36:59.000000Z,ses_savant_ha2_000,Commit and push Apple TV feedback,"Commit and push"
+1788361046000,2026-09-02T14:57:26.000000Z,ses_savant_ha2_000,Correct Savant volume scale,"Ok, turning off and on works.  Pausing works.  There was also an interesting thing discovered in the reverse engineering repo.  The volumes in the savant app was 2x what home assistant sees."
+1788361046001,2026-09-02T14:57:26.001000Z,ses_savant_ha2_000,Fix Apple TV resume,"Oh, but resuming from paused doesn't work on appletv."
+1788361557000,2026-09-02T15:05:57.000000Z,ses_savant_ha2_000,Commit each declarative implementation prompt,"commit and push.  From now on, after a prompt that includes a declarative command for something to be implemented, it's better to commit and push so the commits and prompts have a 1:1 relationship"
