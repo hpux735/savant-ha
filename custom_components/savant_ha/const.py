@@ -104,7 +104,7 @@ USER_DATA_INITIAL_STATES = (
     "global.setting.update",
 )
 USER_DATA_IMAGE_STATES = ("global.image.update", "user.image.update")
-# State key the host pushes the scene list under (PROTOCOL.md §9).
+# State key the host pushes the current scene list under (PROTOCOL.md §9.1).
 SCENES_STATE_KEY = "scenesAndFoldersReduced"
 
 # ---- Service/request verbs (PROTOCOL.md §6) -------------------------------

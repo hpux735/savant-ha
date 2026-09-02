@@ -69,6 +69,7 @@ from .const import (
     URI_USER_DATA_REGISTER,
     USER_DATA_IMAGE_STATES,
     USER_DATA_INITIAL_STATES,
+    SCENES_STATE_KEY,
     build_default_subscribe_keys,
     new_uid,
     room_from_state_key,
@@ -77,6 +78,7 @@ from .const import (
 _StateCallback = Callable[[str, Any], None]
 _StatusCallback = Callable[[bool], None]
 _RoomsCallback = Callable[[set[str]], None]
+_ScenesCallback = Callable[[dict[str, dict[str, Any]]], None]
 
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
@@ -161,6 +163,10 @@ class SavantError(Exception):
 
 class SavantConnectionError(SavantError):
     """Raised when the control channel is not connected."""
+
+
+class SavantSceneActivationUnsupported(SavantError):
+    """Raised until a scene activation request is observed on the wire."""
 
 
 @dataclass
@@ -474,6 +480,7 @@ class SavantClient:
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
         self.on_rooms_discovered: _RoomsCallback | None = None
+        self.on_scenes_update: _ScenesCallback | None = None
 
     # ------------------------------------------------------------------ public
 
@@ -582,6 +589,16 @@ class SavantClient:
         if request_args:
             message["requestArgs"] = request_args
         await self.request("service/request", [message])
+
+    async def activate_scene(self, scene_id: str) -> None:
+        """Activate a dashboard scene once its native request is known.
+
+        No captured request invokes a saved scene (PROTOCOL.md §9.3).  Keep scene IDs
+        wired to this boundary, but do not synthesize a dashboard or service request.
+        """
+        raise SavantSceneActivationUnsupported(
+            f"Scene activation is not yet observed for scene {scene_id!r}"
+        )
 
     async def async_get_artwork(
         self, component: str, logical_component: str, key: str
@@ -780,10 +797,14 @@ class SavantClient:
             LOGGER.debug("Failed to register additional state keys (reconnecting?)")
 
     async def _send_dashboard_register(self) -> None:
-        # Subscribe to the native client's observed dashboard state.  Dashboard scene
-        # responses also embed room names (PROTOCOL.md §5.2).
+        # ``scenesAndFoldersReduced`` delivers the full live scene inventory, while
+        # ``RecentServices`` matches the native startup registration (PROTOCOL.md §9.1).
         await self.request(
-            URI_DASHBOARD_REGISTER, [{"state": DASHBOARD_STATE_RECENT_SERVICES}]
+            URI_DASHBOARD_REGISTER,
+            [
+                {"state": DASHBOARD_STATE_RECENT_SERVICES},
+                {"state": SCENES_STATE_KEY},
+            ],
         )
 
     async def _send_scenes_request(self) -> None:
@@ -897,6 +918,10 @@ class SavantClient:
             LOGGER.debug("Savant featureLock: %s", _redact(messages))
         elif uri in (URI_DASHBOARD_UPDATE, URI_DASHBOARD_REQUEST):
             self._emit_rooms(rooms_from_scene_messages(messages))
+            if uri == URI_DASHBOARD_UPDATE:
+                scenes = scene_summaries_from_messages(messages)
+                if scenes is not None and self.on_scenes_update is not None:
+                    self.on_scenes_update(scenes)
         else:
             LOGGER.debug("Unhandled Savant URI %r", uri)
 
@@ -991,3 +1016,27 @@ def rooms_from_scene_messages(messages: list[Any]) -> set[str]:
     for message in messages:
         _walk(message)
     return {r for r in rooms if r}
+
+
+def scene_summaries_from_messages(messages: list[Any]) -> dict[str, dict[str, Any]] | None:
+    """Return the complete dashboard scene list from a subscription update.
+
+    The host pushes the list as the value of ``scenesAndFoldersReduced``.  An empty list
+    is a valid authoritative inventory; ``None`` means this frame was unrelated or malformed.
+    """
+    for message in messages:
+        if not isinstance(message, dict) or message.get("state") != SCENES_STATE_KEY:
+            continue
+        value = message.get("value")
+        if not isinstance(value, list):
+            return None
+        return {
+            scene_id: scene
+            for scene in value
+            if isinstance(scene, dict)
+            and isinstance((scene_id := scene.get("id")), str)
+            and scene_id
+            and isinstance(scene.get("name"), str)
+            and scene["name"]
+        }
+    return None

@@ -60,7 +60,10 @@ class SavantHub:
         self.hass = hass
         self.entry = entry
         self.states: dict[str, Any] = {}
+        # None until the dashboard subscription delivers its authoritative full list.
+        self.scenes: dict[str, dict[str, Any]] | None = None
         self._callbacks: dict[str, list[Callable[[], None]]] = defaultdict(list)
+        self._scene_callbacks: list[Callable[[], None]] = []
         self._created: set[str] = set()
         self._flush_scheduled = False
         self._task: asyncio.Task | None = None
@@ -110,6 +113,7 @@ class SavantHub:
         self.client.on_state_update = self._on_state_update
         self.client.on_status = self._on_status
         self.client.on_rooms_discovered = self._on_rooms_discovered
+        self.client.on_scenes_update = self._on_scenes_update
         self.coordinator = SavantCoordinator(hass, self)
 
     # ------------------------------------------------------------- lifecycle
@@ -156,6 +160,14 @@ class SavantHub:
         self._schedule_flush()
 
     @callback
+    def _on_scenes_update(self, scenes: dict[str, dict[str, Any]]) -> None:
+        """Replace the scene inventory from the dashboard's full-list push."""
+        self.scenes = scenes
+        for callback_fn in list(self._scene_callbacks):
+            callback_fn()
+        self._schedule_flush()
+
+    @callback
     def _on_status(self, connected: bool) -> None:
         LOGGER.info("Savant host %s", "connected" if connected else "disconnected")
         # Availability changes must be re-rendered even if no state changed.
@@ -181,8 +193,15 @@ class SavantHub:
     def add_platform_callback(self, fn: Callable[[], None]) -> None:
         self._callbacks["_all"].append(fn)
 
+    def add_scene_callback(self, fn: Callable[[], None]) -> None:
+        """Register a callback for authoritative dashboard scene-list updates only."""
+        self._scene_callbacks.append(fn)
+
     def is_created(self, unique_id: str) -> bool:
         return unique_id in self._created
 
     def mark_created(self, unique_ids: list[str]) -> None:
         self._created.update(unique_ids)
+
+    def unmark_created(self, unique_ids: list[str]) -> None:
+        self._created.difference_update(unique_ids)

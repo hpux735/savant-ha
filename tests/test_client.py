@@ -16,6 +16,7 @@ from custom_components.savant_ha.const import (
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
     ENVELOPE_KEY_USER,
+    SCENES_STATE_KEY,
     SVC_ENV_HVAC,
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
@@ -32,6 +33,7 @@ from custom_components.savant_ha.savant_client import (
     SavantHostInfo,
     probe_host,
     rooms_from_scene_messages,
+    scene_summaries_from_messages,
 )
 
 
@@ -196,7 +198,13 @@ def test_post_auth_matches_observed_state_startup_order():
 
     assert sent == [
         ("session/fileDownload", [{"filePath": "uiconfig.tar.gz"}]),
-        ("dis/dashboard/register", [{"state": DASHBOARD_STATE_RECENT_SERVICES}]),
+        (
+            "dis/dashboard/register",
+            [
+                {"state": DASHBOARD_STATE_RECENT_SERVICES},
+                {"state": SCENES_STATE_KEY},
+            ],
+        ),
         (URI_STATE_REGISTER, [{"state": "global.SonosGroups"}]),
         ("dis/userData/register", [{"state": "local.setting.update"}]),
         ("dis/userData/register", [{"state": "user.setting.update"}]),
@@ -530,6 +538,54 @@ def test_probe_host_captures_authorized_before_disconnect(monkeypatch):
     )
     assert info.authorized is True
     assert info.auth_response_seen is True
+
+
+def test_scene_summaries_extracts_an_authoritative_dashboard_list():
+    messages = [
+        {
+            "state": "scenesAndFoldersReduced",
+            "value": [
+                {"id": "scene-1", "name": "Morning"},
+                {"id": "scene-2", "name": "Movie Night", "actions": []},
+                {"id": "missing-name"},
+                {"name": "missing-id"},
+            ],
+        }
+    ]
+
+    assert scene_summaries_from_messages(messages) == {
+        "scene-1": {"id": "scene-1", "name": "Morning"},
+        "scene-2": {"id": "scene-2", "name": "Movie Night", "actions": []},
+    }
+
+
+def test_scene_summaries_accepts_an_empty_authoritative_list():
+    assert scene_summaries_from_messages(
+        [{"state": SCENES_STATE_KEY, "value": []}]
+    ) == {}
+    assert scene_summaries_from_messages([{"state": "RecentServices", "value": []}]) is None
+
+
+def test_dashboard_scene_update_notifies_inventory_callback():
+    client = SavantClient("10.0.0.5", 12345)
+    seen: list[dict[str, dict[str, object]]] = []
+    client.on_scenes_update = seen.append
+
+    client._handle_frame(
+        _frame(
+            {
+                "URI": "dis/dashboard/update",
+                "messages": [
+                    {
+                        "state": SCENES_STATE_KEY,
+                        "value": [{"id": "scene-1", "name": "Morning"}],
+                    }
+                ],
+            }
+        )
+    )
+
+    assert seen == [{"scene-1": {"id": "scene-1", "name": "Morning"}}]
 
 
 if __name__ == "__main__":

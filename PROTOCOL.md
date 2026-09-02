@@ -256,6 +256,15 @@ optimistically reflected until `ActiveService` changes.
 
 ### 5.5 Global — `global.CurrentTemperature`, `global.LightsAreOn`, `global.SonosGroups`, `Energy.Grid.IsAvailable`.
 
+### 5.6 Scenes
+Subscribe to dashboard state `scenesAndFoldersReduced` using `dis/dashboard/register`.
+The initial `dis/dashboard/update` is the complete current scene-summary list; summaries
+include stable `id` and `name`, so integrations can reconcile scene entities as host scenes
+are created or removed. Creation was observed to push a replacement list. A deletion push
+has not been observed, so deletion reconciliation relies on a future list update or
+reconnection. No scene activation request has been captured; do not invent one from the
+summary `actions` or scene definition (sibling PROTOCOL.md §9).
+
 ## 5b. Config archive (authoritative device inventory)
 
 The complete room/load/device inventory is **downloaded**, not pushed: `session/fileDownload
