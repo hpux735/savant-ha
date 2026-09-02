@@ -62,7 +62,7 @@ extra room names) live behind the integration's **Configure** button.
 | Climate | `HVACEntities` | mode (Off/Heat/Cool/Auto), heat/cool setpoints, current temp/humidity |
 | Cover | `ShadeEntities` / `GarageEntities` | shade open/close/stop and position |
 | Fan | `FanEntities` | on/off (read-only for now) |
-| Media Player | `Zones` (AV zones) | now-playing, power, volume, play/pause, previous/next, seek, album art |
+| Media Player | `ServiceImplementationZonedService` (one selectable source per room) | now-playing, power, volume, play/pause, previous/next, seek, album art |
 | Sensor | `global.CurrentTemperature`, `<room>.RoomCurrentTemperature` | temperature |
 
 ## Limitations / open questions

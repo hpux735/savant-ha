@@ -152,6 +152,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str = ""
         self._password: str = ""
         self._devices: list[dict[str, Any]] = []
+        self._reconfigure_entry: ConfigEntry | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -269,6 +270,75 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=_devices_schema(self._devices),
             description_placeholders={"count": str(len(self._devices)), "host": self._host},
         )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Re-download the archive so an existing entry can import new endpoints."""
+        self._reconfigure_entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._username = user_input[CONF_USERNAME]
+            self._password = user_input[CONF_PASSWORD]
+            try:
+                probe = await probe_host(
+                    self._reconfigure_entry.data[CONF_HOST],
+                    int(self._reconfigure_entry.data[CONF_PORT]),
+                    home_id=self._reconfigure_entry.data.get(CONF_HOME_ID, ""),
+                    username=self._username,
+                    password=self._password,
+                    timeout=20.0,
+                )
+            except Exception:  # noqa: BLE001 - surface a generic connect error
+                LOGGER.exception("Savant inventory refresh failed")
+                probe = None
+
+            if probe is None:
+                errors["base"] = "cannot_connect"
+            elif not probe.authorized:
+                errors["base"] = (
+                    "invalid_auth" if probe.auth_response_seen else "no_auth_response"
+                )
+            else:
+                self._devices = _devices_from_info(probe)
+                if self._devices:
+                    return self.async_show_form(
+                        step_id="reconfigure_devices",
+                        data_schema=_devices_schema(self._devices),
+                        description_placeholders={"count": str(len(self._devices))},
+                    )
+                errors["base"] = "no_devices"
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_LOGIN_SCHEMA,
+            errors=errors,
+            description_placeholders={"host": self._reconfigure_entry.data[CONF_HOST]},
+        )
+
+    async def async_step_reconfigure_devices(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Persist a reconfigured, user-approved device inventory."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reconfigure_devices",
+                data_schema=_devices_schema(self._devices),
+                description_placeholders={"count": str(len(self._devices))},
+            )
+        if self._reconfigure_entry is None:
+            return self.async_abort(reason="reconfigure_failed")
+        selected = set(user_input.get("devices", []))
+        data = dict(self._reconfigure_entry.data)
+        data.update(
+            {
+                CONF_USERNAME: self._username,
+                CONF_PASSWORD: self._password,
+                CONF_DEVICES: [dict(d) for d in self._devices if d["id"] in selected],
+            }
+        )
+        self.hass.config_entries.async_update_entry(self._reconfigure_entry, data=data)
+        return self.async_abort(reason="reconfigure_successful")
 
     async def _discover(self, host: str) -> SavantHostInfo | None:
         try:

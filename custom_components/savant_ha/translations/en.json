@@ -23,6 +23,21 @@
         "data": {
           "devices": "Devices to import"
         }
+      },
+      "reconfigure": {
+        "title": "Refresh Savant devices",
+        "description": "Log in to download the current device and media-source inventory from {host}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure_devices": {
+        "title": "Savant devices found",
+        "description": "{count} device(s) found. Choose the refreshed inventory to import, including each media source.",
+        "data": {
+          "devices": "Devices to import"
+        }
       }
     },
     "error": {
@@ -33,7 +48,9 @@
       "no_devices": "Connected and authenticated, but no rooms or devices were reported by the host."
     },
     "abort": {
-      "already_configured": "This host is already configured."
+      "already_configured": "This host is already configured.",
+      "reconfigure_failed": "The reconfiguration session was not initialized.",
+      "reconfigure_successful": "Savant device inventory refreshed."
     }
   },
   "options": {

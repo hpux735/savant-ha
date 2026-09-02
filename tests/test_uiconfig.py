@@ -28,7 +28,12 @@ def _make_sqlite_bytes() -> bytes:
     conn.execute(
         "CREATE TABLE ServiceImplementationServiceResources"
         " (id INTEGER PRIMARY KEY, zone TEXT, component TEXT, logicalComponent TEXT,"
-        " serviceType TEXT, serviceNameAlias TEXT, pathOrder INTEGER)"
+        " serviceType TEXT, serviceNameAlias TEXT, service TEXT, serviceVariantID TEXT,"
+        " alias TEXT, pathOrder INTEGER)"
+    )
+    conn.execute(
+        "CREATE VIEW ServiceImplementationZonedService AS SELECT * "
+        "FROM ServiceImplementationServiceResources WHERE pathOrder = 0"
     )
     conn.execute("INSERT INTO Rooms VALUES (1,'Kitchen','r1'),(2,'Living Room','r2')")
     conn.execute(
@@ -51,10 +56,15 @@ def _make_sqlite_bytes() -> bytes:
     conn.execute("INSERT INTO HVACEntities VALUES (1,'Main Thermostat',11)")
     conn.execute(
         "INSERT INTO ServiceImplementationServiceResources VALUES"
-        " (1,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Kitchen Music',0),"
-        " (2,'Kitchen','Music','Audio Zone 1','SVC_SETTINGS_EQUALIZER','Kitchen EQ',0),"
-        " (3,'Living Room','Sound Bar','Audio Zone 1','SVC_AV_SAVANTMUSIC','Living Music',0),"
-        " (4,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Alternate path',1)"
+        " (1,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Music',"
+        "'Kitchen-Music-Audio-Zone-1','1','Music',0),"
+        " (2,'Kitchen','Music','Audio Zone 1','SVC_SETTINGS_EQUALIZER','Kitchen EQ',"
+        "'Kitchen-EQ','1','Kitchen EQ',0),"
+        " (3,'Kitchen','Living Room Sound Bar','AVB Stream 2','SVC_AV_SAVANTMUSIC',"
+        "'Living Room Sound Bar','Kitchen-Living-Room-Sound-Bar-AVB-Stream-2','2',"
+        "'Living Room Sound Bar',0),"
+        " (4,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Transport hop',"
+        "'Kitchen-Living-Room-Sound-Bar-AVB-Stream-2','2','Transport hop',1)"
     )
     data = conn.serialize()
     conn.close()
@@ -117,9 +127,10 @@ def test_reassemble_and_parse_devices():
 
     media = [d for d in devices if d.device_type == "media_player"]
     assert [(d.name, d.room, d.component, d.zone) for d in media] == [
-        ("Music Audio Zone 1", "Kitchen", "Music", "Audio Zone 1"),
-        ("Sound Bar Audio Zone 1", "Living Room", "Sound Bar", "Audio Zone 1"),
+        ("Music", "Kitchen", "Music", "Audio Zone 1"),
+        ("Living Room Sound Bar", "Kitchen", "Living Room Sound Bar", "AVB Stream 2"),
     ]
+    assert [d.extra["variant_id"] for d in media] == ["1", "2"]
 
 
 def test_reassemble_ignores_non_archive_frames():

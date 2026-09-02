@@ -281,6 +281,13 @@ def test_zone_state_prefix_includes_service_type():
     )
 
 
+def test_zone_state_prefix_supports_non_audio_zone_sources():
+    assert (
+        control.zone_state_prefix("Living Room Sound Bar", "AVB Stream 2")
+        == f"Living Room Sound Bar.AVB Stream 2.{SVC_AV_SAVANTMUSIC}."
+    )
+
+
 def test_parse_media_time_handles_observed_and_long_formats():
     assert control.parse_media_time("00:06") == 6.0
     assert control.parse_media_time("03:38") == 218.0

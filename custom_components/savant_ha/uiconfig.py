@@ -171,7 +171,7 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
 
     tables = [
         r[0]
-        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")
     ]
 
     entity_tables = [t for t in tables if t.endswith("Entities")]
@@ -261,45 +261,55 @@ def _parse_media_zones(
     tables: list[str],
     devices: list[SavantDevice],
 ) -> None:
-    # Audio zones are the music service's "Audio Zone N" zoned services in
-    # ServiceImplementationServiceResources. The `zone` column is the room;
-    # `component`/`logicalComponent` identify the audio zone (zone numbers are
-    # per-component). A zone may be reached through a nonzero pathOrder, so deduplicate
-    # the route rows instead of assuming the endpoint always has pathOrder 0.
+    # ServiceImplementationZonedService contains the canonical (pathOrder=0) endpoint
+    # for every selectable music source. ServiceResources also contains intermediate
+    # AVB transport hops, which must not become media players (PROTOCOL.md §13).
     sir = "ServiceImplementationServiceResources"
-    if sir not in tables:
+    zoned_service = "ServiceImplementationZonedService"
+    source = zoned_service if zoned_service in tables else sir
+    if source not in tables:
         return
-    cols = _table_columns(conn, sir)
+    cols = _table_columns(conn, source)
     lc_col = _pick(cols, ("logicalComponent", "logical_component"))
     svc_col = _pick(cols, ("serviceType", "service_type"))
     zone_col = _pick(cols, ("zone",))
     comp_col = _pick(cols, ("component",))
     if not (lc_col and svc_col and zone_col):
         return
-    seen: set[tuple[str, str]] = set()
-    cursor = conn.execute(f'SELECT * FROM "{sir}"')
+    path_order_col = _pick(cols, ("pathOrder", "path_order"))
+    name_col = _pick(cols, ("serviceNameAlias", "alias", "name"))
+    service_col = _pick(cols, ("service", "serviceID", "service_id"))
+    variant_col = _pick(cols, ("serviceVariantID", "serviceVariantId", "variantID"))
+    seen: set[str | tuple[str, str, str]] = set()
+    cursor = conn.execute(f'SELECT * FROM "{source}"')
     for row in cursor:
         d = _row_to_dict(cursor, row)
         if str(d.get(svc_col) or "") != "SVC_AV_SAVANTMUSIC":
             continue
-        logical = str(d.get(lc_col) or "")
-        if not logical.startswith("Audio Zone"):
+        if source == sir and path_order_col and str(d.get(path_order_col)) != "0":
             continue
+        logical = str(d.get(lc_col) or "")
         component = str(d.get(comp_col) or "")
         room = str(d.get(zone_col) or "")
-        key = (component, logical)
+        if not (logical and component and room):
+            continue
+        service = str(d.get(service_col) or "") if service_col else ""
+        key: str | tuple[str, str, str] = service or (room, component, logical)
         if key in seen:
             continue
         seen.add(key)
-        name = f"{component} {logical}".strip() if component else logical
+        name = str(d.get(name_col) or "") if name_col else ""
         devices.append(
             SavantDevice(
                 device_type="media_player",
-                name=name,
+                name=name or component,
                 room=room,
                 entity_id=f"media_player:{d.get('id')}",
                 zone=logical,
                 component=component,
-                extra={"service_id": "SVC_AV_SAVANTMUSIC"},
+                extra={
+                    "service_id": service or "SVC_AV_SAVANTMUSIC",
+                    "variant_id": str(d.get(variant_col) or "1") if variant_col else "1",
+                },
             )
         )

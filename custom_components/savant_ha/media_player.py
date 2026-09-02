@@ -1,4 +1,4 @@
-"""Media player platform: one entity per Savant audio zone."""
+"""Media player platform: one entity per selectable Savant music source."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ _ARTWORK = "CurrentArtworkPath"
 
 
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
-    """A single Savant audio zone."""
+    """A single Savant music source in one room."""
 
     def __init__(
         self,
@@ -62,6 +62,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._component = component
         self._logical_component = logical_component
         self._room = str(device.get("room") or "")
+        control = device.get("control")
+        self._variant_id = (
+            str(control.get("variant_id") or "1") if isinstance(control, dict) else "1"
+        )
         self._attr_unique_id = f"{hub.uid}_media_{device['id']}"
         self._last_media_position: float | None = None
         self._media_position_updated_at: datetime | None = None
@@ -194,7 +198,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             service_type=SVC_AV_SAVANTMUSIC,
             zone=self._room,
             logical_component=self._logical_component,
-            variant_id="1",
+            variant_id=self._variant_id,
             request_args=request_args,
         )
 
@@ -248,7 +252,7 @@ def _discovered_zones(hub: SavantHub) -> set[int]:
 
 
 def _logical_component(device: dict[str, object]) -> str | None:
-    return audio_zone_logical_component(device)
+    return str(device.get("zone") or "") or audio_zone_logical_component(device)
 
 
 def _build_entities(hub: SavantHub) -> list[SavantMediaPlayer]:
