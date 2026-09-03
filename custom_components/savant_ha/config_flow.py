@@ -19,7 +19,6 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
-from homeassistant.components.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
@@ -175,7 +174,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=_USER_SCHEMA, errors=errors
         )
 
-    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> FlowResult:
+    async def async_step_zeroconf(self, discovery_info: Any) -> FlowResult:
         """Start login directly from an observed Savant mDNS advertisement."""
         info = await self._discover(discovery_info.host)
         if info is None or info.port <= 0 or not info.uid:
