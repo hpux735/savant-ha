@@ -328,18 +328,18 @@ def _encode_discovery(service: str) -> bytes:
     return _pack({"service": service})
 
 
-async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | None:
-    """Discover a host's control port / homeId over UDP (PROTOCOL.md §1.1).
+async def discover_hosts(
+    host: str | None = None, timeout: float = 3.0
+) -> list[SavantHostInfo]:
+    """Return all control records found through UDP discovery (PROTOCOL.md §1.1).
 
-    Broadcasts a tiny msgpack ``{"service": "_control_.ws"}`` query to UDP 9101 (and
-    ``_presence_.ws`` to 9103), then reads the host's reply.  Unicast to ``host`` and a
-    broadcast to ``255.255.255.255`` are both attempted because the target's broadcast
-    address is not known ahead of time.
+    Broadcasts the observed msgpack queries to UDP 9101/9103, then reads each host's
+    reply.  A unicast probe is included when ``host`` is available during initial setup.
     """
 
     class _Proto(asyncio.DatagramProtocol):
         def __init__(self) -> None:
-            self.results: dict[str, dict[str, Any]] = {}
+            self.results: list[tuple[str, dict[str, Any]]] = []
 
         def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:  # type: ignore[override]
             try:
@@ -347,7 +347,7 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
             except Exception:  # noqa: BLE001 - tolerate malformed replies
                 return
             if isinstance(obj, dict):
-                self.results.setdefault(addr[0], obj)
+                self.results.append((addr[0], obj))
 
         def error_received(self, exc: Exception) -> None:
             pass
@@ -360,19 +360,23 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.bind(("0.0.0.0", 0))
     transport, _ = await loop.create_datagram_endpoint(lambda: proto, sock=sock)
-    targets = {
-        (host, DISCOVERY_PORT_CONTROL),
-        (host, DISCOVERY_PORT_PRESENCE),
-        ("255.255.255.255", DISCOVERY_PORT_CONTROL),
-        ("255.255.255.255", DISCOVERY_PORT_PRESENCE),
-    }
+    targets = [
+        ("255.255.255.255", DISCOVERY_PORT_CONTROL, DISCOVERY_SERVICE_CONTROL),
+        ("255.255.255.255", DISCOVERY_PORT_PRESENCE, DISCOVERY_SERVICE_PRESENCE),
+    ]
+    if host:
+        targets.extend(
+            [
+                (host, DISCOVERY_PORT_CONTROL, DISCOVERY_SERVICE_CONTROL),
+                (host, DISCOVERY_PORT_PRESENCE, DISCOVERY_SERVICE_PRESENCE),
+            ]
+        )
     try:
-        for target in targets:
-            for service in (DISCOVERY_SERVICE_CONTROL, DISCOVERY_SERVICE_PRESENCE):
-                try:
-                    transport.sendto(_encode_discovery(service), target)
-                except OSError:
-                    pass
+        for target_host, port, service in targets:
+            try:
+                transport.sendto(_encode_discovery(service), (target_host, port))
+            except OSError:
+                pass
         await asyncio.sleep(timeout)
     finally:
         transport.close()
@@ -381,8 +385,10 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
         "Savant discovery: %d raw reply(ies) for %s: %s",
         len(proto.results),
         host,
-        {addr: {k: v for k, v in rec.items() if k not in _REDACT_KEYS}
-         for addr, rec in proto.results.items()},
+        {
+            addr: {k: v for k, v in record.items() if k not in _REDACT_KEYS}
+            for addr, record in proto.results
+        },
     )
     if not proto.results:
         LOGGER.warning(
@@ -390,24 +396,39 @@ async def discover_host(host: str, timeout: float = 3.0) -> SavantHostInfo | Non
             "on the same network (L2) as the host?",
             host,
         )
-    # Prefer the record from the queried host address (other Savant hosts/proxies may
-    # answer the same broadcast); fall back to any record with a valid control port
-    # (PROTOCOL.md §1.1).
-
     def _record_port(record: dict[str, Any]) -> int:
         try:
             return int(record.get("port", 0))
         except (TypeError, ValueError):
             return 0
 
-    own = proto.results.get(host)
-    if own is not None and _record_port(own) > 0:
-        return SavantHostInfo.from_record(host, own)
-    for addr, record in proto.results.items():
-        if addr == host:
-            continue
+    records: list[SavantHostInfo] = []
+    seen: set[tuple[str, str, int]] = set()
+    for addr, record in proto.results:
         if _record_port(record) > 0:
-            return SavantHostInfo.from_record(addr, record)
+            info = SavantHostInfo.from_record(addr, record)
+            key = (info.host, info.uid, info.port)
+            if key not in seen:
+                seen.add(key)
+                records.append(info)
+    return records
+
+
+async def discover_host(host: str | None, timeout: float = 3.0) -> SavantHostInfo | None:
+    """Discover a host's current control endpoint (PROTOCOL.md §1.1)."""
+    records = await discover_hosts(host, timeout)
+    if host:
+        for info in records:
+            if info.host == host:
+                return info
+    return records[0] if records else None
+
+
+async def discover_host_by_uid(host_uid: str, timeout: float = 3.0) -> SavantHostInfo | None:
+    """Resolve a stable host UID to its current DHCP-assigned endpoint."""
+    for info in await discover_hosts(timeout=timeout):
+        if info.uid == host_uid:
+            return info
     return None
 
 
@@ -425,6 +446,7 @@ class SavantClient:
         host: str,
         port: int,
         *,
+        host_uid: str = "",
         uid: str | None = None,
         home_id: str = "",
         cloud_token: str = "",
@@ -438,6 +460,7 @@ class SavantClient:
     ) -> None:
         self._host = host
         self._port = port
+        self._host_uid = host_uid
         # Client device identity — generated per config entry if not supplied.  Must be
         # non-UUID-shaped (see const.new_uid).
         self._uid = uid or new_uid()
@@ -527,26 +550,39 @@ class SavantClient:
             await asyncio.sleep(delay)
             delay = min(delay * 2, self._reconnect_max_delay)
 
-    async def _refresh_discovery(self) -> None:
+    async def async_resolve_endpoint(self) -> SavantHostInfo | None:
+        """Resolve the configured host identity to its current network endpoint."""
         try:
-            info = await discover_host(self._host, timeout=3.0)
+            if self._host_uid:
+                info = await discover_host_by_uid(self._host_uid, timeout=3.0)
+            else:
+                info = await discover_host(self._host or None, timeout=3.0)
         except (TimeoutError, OSError):
-            return
+            return None
         if info is None:
             if not self._port_warned:
                 LOGGER.warning(
-                    "Savant control port unknown for %s (UDP discovery found nothing); "
+                    "Savant host endpoint unknown for %s (UDP discovery found nothing); "
                     "will keep retrying",
-                    self._host,
+                    self._host_uid or self._host,
                 )
                 self._port_warned = True
-            return
+            return None
         self._port_warned = False
+        if info.host != self._host:
+            LOGGER.info("Savant host endpoint changed")
+            self._host = info.host
         if info.port != self._port:
             LOGGER.info("Savant control port changed %s -> %s", self._port, info.port)
         self._port = info.port
         if info.home_id:
             self._home_id = info.home_id
+        if info.uid:
+            self._host_uid = info.uid
+        return info
+
+    async def _refresh_discovery(self) -> None:
+        await self.async_resolve_endpoint()
 
     async def stop(self) -> None:
         self._stopping = True

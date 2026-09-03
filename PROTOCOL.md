@@ -50,6 +50,10 @@ Reply keys: `name`, `port`, `homeId`, `hostModel`, `buildVersion`, `UID`, `onboa
 `scheme:"wss"`, `featureLevel`, `configStatus`, `cloudStatus`. The **9101 control record's
 `port`** is the terminal port dialed for the RPM WSS connection.
 
+The host also advertises `_soapi_sdo._tcp` through mDNS. This gives Home Assistant an
+initial endpoint for configuration, but the UDP control record remains authoritative for
+the stable `UID` and current WSS port.
+
 ## 2. Message envelope
 
 Every message is a msgpack map:

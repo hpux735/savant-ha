@@ -31,8 +31,9 @@ def new_uid() -> str:
 
 
 # ---- Config flow fields ---------------------------------------------------
-CONF_HOST = "host"  # <HOST_IP> — user-supplied
-CONF_PORT = "port"  # optional explicit control port (overrides UDP discovery)
+CONF_HOST = "host"  # transient <HOST_IP> used only while configuring legacy entries
+CONF_PORT = "port"  # legacy cached control port; UDP discovery is authoritative
+CONF_HOST_UID = "host_uid"  # stable host UID from the UDP control record
 CONF_USERNAME = "username"  # local user name for the host (optional)
 CONF_PASSWORD = "password"  # local user password for the host (optional)
 CONF_CLOUD_TOKEN = "cloud_token"  # optional; observed key in devicePresent

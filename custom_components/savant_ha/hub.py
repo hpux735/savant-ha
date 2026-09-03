@@ -25,6 +25,7 @@ from .const import (
     CONF_HOME_ID,
     CONF_HOST,
     CONF_HOST_TOKEN,
+    CONF_HOST_UID,
     CONF_PASSWORD,
     CONF_PORT,
     CONF_ROOMS,
@@ -99,8 +100,9 @@ class SavantHub:
                     )
 
         self.client = SavantClient(
-            host=data[CONF_HOST],
+            host=data.get(CONF_HOST, ""),
             port=int(data.get(CONF_PORT) or 0),
+            host_uid=data.get(CONF_HOST_UID, ""),
             uid=self.uid,
             home_id=data.get(CONF_HOME_ID, ""),
             cloud_token=options.get(CONF_CLOUD_TOKEN, ""),
@@ -119,6 +121,14 @@ class SavantHub:
     # ------------------------------------------------------------- lifecycle
 
     async def start(self) -> None:
+        endpoint = await self.client.async_resolve_endpoint()
+        if endpoint is not None and endpoint.uid and not self.entry.data.get(CONF_HOST_UID):
+            # Retire legacy endpoint data after discovery confirms the stable host UID.
+            data = dict(self.entry.data)
+            data[CONF_HOST_UID] = endpoint.uid
+            data.pop(CONF_HOST, None)
+            data.pop(CONF_PORT, None)
+            self.hass.config_entries.async_update_entry(self.entry, data=data)
         self._task = asyncio.create_task(self.client.run_forever())
 
     async def stop(self) -> None:

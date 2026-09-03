@@ -3,10 +3,9 @@
     "step": {
       "user": {
         "title": "Connect to Savant host",
-        "description": "Enter the IP address (or hostname) of your Savant host. The control port is discovered automatically unless you provide one.",
+        "description": "Enter the IP address (or hostname) of your Savant host. Its stable identity and current control endpoint are discovered automatically.",
         "data": {
-          "host": "Host address",
-          "port": "Port (optional)"
+          "host": "Host address"
         }
       },
       "login": {
@@ -41,7 +40,7 @@
       }
     },
     "error": {
-      "discovery_failed": "Could not discover the host's control port. Provide an explicit port.",
+      "discovery_failed": "Could not discover a Savant host with a stable UID. Confirm Home Assistant is on the same network as the host.",
       "invalid_auth": "Login failed — check the host-local username and password.",
       "no_auth_response": "The host did not respond to the login request. The host may only accept local login from the Savant app (see PROTOCOL.md §4.6).",
       "cannot_connect": "Could not connect to the host on the discovered port.",
@@ -49,6 +48,7 @@
     },
     "abort": {
       "already_configured": "This host is already configured.",
+      "discovery_failed": "Could not discover a Savant host with a stable UID. Confirm Home Assistant is on the same network as the host.",
       "reconfigure_failed": "The reconfiguration session was not initialized.",
       "reconfigure_successful": "Savant device inventory refreshed."
     }

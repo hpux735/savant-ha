@@ -452,6 +452,22 @@ def test_refresh_discovery_updates_port(monkeypatch):
     assert client._home_id == "home-1"
 
 
+def test_refresh_discovery_resolves_uid_to_current_endpoint(monkeypatch):
+    client = SavantClient("", 0, host_uid="stable-host-uid")
+
+    async def fake_discover(host_uid, timeout):
+        assert host_uid == "stable-host-uid"
+        return SavantHostInfo(
+            host="10.0.0.5", port=35299, home_id="home-1", uid=host_uid
+        )
+
+    monkeypatch.setattr(sc, "discover_host_by_uid", fake_discover)
+    asyncio.run(client._refresh_discovery())
+    assert client._host == "10.0.0.5"
+    assert client._port == 35299
+    assert client._home_id == "home-1"
+
+
 def test_refresh_discovery_keeps_zero_port(monkeypatch):
     client = SavantClient("10.0.0.5", 0)
 

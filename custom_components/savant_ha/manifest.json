@@ -1,6 +1,7 @@
 {
   "domain": "savant_ha",
   "name": "Savant",
+  "zeroconf": ["_soapi_sdo._tcp.local."],
   "codeowners": ["@wdillon"],
   "config_flow": true,
   "dependencies": [],

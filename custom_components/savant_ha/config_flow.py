@@ -2,8 +2,8 @@
 
 Three steps, matching the standard device-import UX:
 
-1. **user** — host address (+ optional explicit port). UDP discovery resolves the
-   control port / ``homeId``.
+1. **user** / **zeroconf** — UDP discovery resolves the host's stable ``UID`` and
+   current control endpoint. mDNS discoveries skip the address prompt.
 2. **login** — the host-local account (``{user, password}``, PROTOCOL.md §4.1). The
    integration connects, authenticates, downloads the config archive, and enumerates
    the device inventory (PROTOCOL.md §13).
@@ -19,7 +19,8 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
+from homeassistant.components.zeroconf import ZeroconfServiceInfo
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
@@ -29,6 +30,7 @@ from .const import (
     CONF_DEVICES,
     CONF_HOME_ID,
     CONF_HOST_TOKEN,
+    CONF_HOST_UID,
     CONF_NAME,
     CONF_ROOMS,
     DEVICE_TYPE_CLIMATE,
@@ -37,16 +39,17 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from .savant_client import SavantDeviceInfo, SavantHostInfo, discover_host, probe_host
+from .savant_client import (
+    SavantDeviceInfo,
+    SavantHostInfo,
+    discover_host,
+    discover_host_by_uid,
+    probe_host,
+)
 
 _USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
-        vol.Optional(CONF_PORT): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1, max=65535, mode=selector.NumberSelectorMode.BOX
-            )
-        ),
     }
 )
 
@@ -149,6 +152,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._port: int = 0
         self._name: str = ""
         self._home_id: str = ""
+        self._host_uid: str = ""
         self._username: str = ""
         self._password: str = ""
         self._devices: list[dict[str, Any]] = []
@@ -160,38 +164,24 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             self._host = user_input[CONF_HOST].strip()
-            port = user_input.get(CONF_PORT)
-
-            info: SavantHostInfo | None = None
-            if not port:
-                info = await self._discover(self._host)
-                if info is None or info.port <= 0:
-                    errors[CONF_PORT] = "discovery_failed"
-                else:
-                    self._port = info.port
-                    self._name = info.name
-                    self._home_id = info.home_id
+            info = await self._discover(self._host)
+            if info is None or info.port <= 0 or not info.uid:
+                errors["base"] = "discovery_failed"
             else:
-                self._port = int(port)
-                # Best-effort enrich name/homeId even with an explicit port.
-                info = await self._discover(self._host)
-                if info is not None:
-                    self._name = info.name
-                    self._home_id = info.home_id
-
-            if not errors:
-                return self.async_show_form(
-                    step_id="login",
-                    data_schema=_LOGIN_SCHEMA,
-                    description_placeholders={
-                        "host": self._host,
-                        "name": self._name or self._host,
-                    },
-                )
+                await self._async_select_host(info)
+                return await self.async_step_login()
 
         return self.async_show_form(
             step_id="user", data_schema=_USER_SCHEMA, errors=errors
         )
+
+    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> FlowResult:
+        """Start login directly from an observed Savant mDNS advertisement."""
+        info = await self._discover(discovery_info.host)
+        if info is None or info.port <= 0 or not info.uid:
+            return self.async_abort(reason="discovery_failed")
+        await self._async_select_host(info)
+        return await self.async_step_login()
 
     async def async_step_login(
         self, user_input: dict[str, Any] | None = None
@@ -250,13 +240,10 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # the HA area via the entity's suggested_area.
             approved = [dict(d) for d in self._devices if d["id"] in selected]
 
-            await self.async_set_unique_id(self._host)
-            self._abort_if_unique_id_configured()
             return self.async_create_entry(
                 title=self._name or self._host,
                 data={
-                    CONF_HOST: self._host,
-                    CONF_PORT: self._port,
+                    CONF_HOST_UID: self._host_uid,
                     CONF_NAME: self._name,
                     CONF_HOME_ID: self._home_id,
                     CONF_USERNAME: self._username,
@@ -280,14 +267,20 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
+            endpoint = await self._discover_configured_entry(self._reconfigure_entry)
             try:
-                probe = await probe_host(
-                    self._reconfigure_entry.data[CONF_HOST],
-                    int(self._reconfigure_entry.data[CONF_PORT]),
-                    home_id=self._reconfigure_entry.data.get(CONF_HOME_ID, ""),
-                    username=self._username,
-                    password=self._password,
-                    timeout=20.0,
+                probe = (
+                    await probe_host(
+                        endpoint.host,
+                        endpoint.port,
+                        home_id=endpoint.home_id
+                        or self._reconfigure_entry.data.get(CONF_HOME_ID, ""),
+                        username=self._username,
+                        password=self._password,
+                        timeout=20.0,
+                    )
+                    if endpoint is not None
+                    else None
                 )
             except Exception:  # noqa: BLE001 - surface a generic connect error
                 LOGGER.exception("Savant inventory refresh failed")
@@ -313,7 +306,9 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="reconfigure",
             data_schema=_LOGIN_SCHEMA,
             errors=errors,
-            description_placeholders={"host": self._reconfigure_entry.data[CONF_HOST]},
+            description_placeholders={
+                "host": self._reconfigure_entry.data.get(CONF_NAME, "Savant host")
+            },
         )
 
     async def async_step_reconfigure_devices(
@@ -345,6 +340,28 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await discover_host(host, timeout=3.0)
         except Exception:  # noqa: BLE001 - discovery is best-effort
             LOGGER.exception("Savant discovery failed for %s", host)
+            return None
+
+    async def _async_select_host(self, info: SavantHostInfo) -> None:
+        """Persist the discovery identity in flow state before collecting credentials."""
+        self._host = info.host
+        self._port = info.port
+        self._name = info.name
+        self._home_id = info.home_id
+        self._host_uid = info.uid
+        await self.async_set_unique_id(info.uid)
+        self._abort_if_unique_id_configured()
+
+    async def _discover_configured_entry(
+        self, entry: ConfigEntry
+    ) -> SavantHostInfo | None:
+        """Resolve current endpoint by stable UID, retaining a legacy-host fallback."""
+        try:
+            if host_uid := entry.data.get(CONF_HOST_UID):
+                return await discover_host_by_uid(host_uid, timeout=3.0)
+            return await discover_host(entry.data.get(CONF_HOST), timeout=3.0)
+        except Exception:  # noqa: BLE001 - show normal connection error to the user
+            LOGGER.exception("Savant discovery failed while refreshing inventory")
             return None
 
 
