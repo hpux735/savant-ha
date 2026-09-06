@@ -27,6 +27,7 @@ from .const import (
     VERB_SET_VOLUME,
     VERB_SKIP_DOWN,
     VERB_SKIP_UP,
+    VERB_STOP_REPEAT,
 )
 from .control import audio_zone_logical_component, parse_media_time, zone_state_prefix
 from .entity import SavantEntity
@@ -42,9 +43,6 @@ _REMAINING = "CurrentRemainingTime"
 _SEEK_DISABLED = "SeekDisabled"
 _ARTWORK = "CurrentArtworkPath"
 _RAW_VOLUME_MAX = 50  # PROTOCOL.md §5.4 / sibling PROTOCOL.md §6.1, §7.2.
-_VERB_STOP_REPEAT = "StopRepeat"  # sibling PROTOCOL.md §7.1.1.
-
-
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     """A single archive-derived AV endpoint in one room."""
 
@@ -266,8 +264,9 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if VERB_PLAY not in self._requests:
             return
         await self._media_request(VERB_PLAY)
-        if self._service_type != SVC_AV_SAVANTMUSIC and _VERB_STOP_REPEAT in self._requests:
-            await self._media_request(_VERB_STOP_REPEAT)
+        if self._service_type != SVC_AV_SAVANTMUSIC:
+            # The native app immediately cancels repeat after Apple TV Play (PROTOCOL.md §5.4).
+            await self._media_request(VERB_STOP_REPEAT)
         self._power_off_requested = False
         self._optimistic_state = MediaPlayerState.PLAYING
         self.async_write_ha_state()
