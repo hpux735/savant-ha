@@ -348,6 +348,8 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._name = info.name
         self._home_id = info.home_id
         self._host_uid = info.uid
+        # Show the advertised host name on the Home Assistant discovery card.
+        self.context["title_placeholders"] = {"name": self._name or self._host}
         await self.async_set_unique_id(info.uid)
         self._abort_if_unique_id_configured()
 
