@@ -44,6 +44,7 @@
       "invalid_auth": "Login failed — check the host-local username and password.",
       "no_auth_response": "The host did not respond to the login request. The host may only accept local login from the Savant app (see PROTOCOL.md §4.6).",
       "cannot_connect": "Could not connect to the host on the discovered port.",
+      "connection_refused": "The Savant host advertised a control port but refused the connection. It may be restarting; wait a moment and try again.",
       "no_devices": "Connected and authenticated, but no rooms or devices were reported by the host."
     },
     "abort": {

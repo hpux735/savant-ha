@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
@@ -190,21 +191,37 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
 
-            try:
-                probe = await probe_host(
-                    self._host,
-                    self._port,
-                    home_id=self._home_id,
-                    username=self._username,
-                    password=self._password,
-                    timeout=20.0,
-                )
-            except Exception:  # noqa: BLE001 - surface a generic connect error
-                LOGGER.exception("Savant probe failed")
-                probe = None
+            probe = None
+            connection_refused = False
+            for attempt in range(2):
+                try:
+                    probe = await probe_host(
+                        self._host,
+                        self._port,
+                        home_id=self._home_id,
+                        username=self._username,
+                        password=self._password,
+                        timeout=20.0,
+                    )
+                    break
+                except aiohttp.ClientConnectorError as err:
+                    connection_refused = isinstance(err.os_error, ConnectionRefusedError)
+                    if connection_refused and attempt == 0:
+                        # The UDP control port can change while the user enters credentials.
+                        info = await self._discover(self._host)
+                        if info is not None and info.port > 0 and info.uid:
+                            self._host = info.host
+                            self._port = info.port
+                            self._home_id = info.home_id
+                            continue
+                    LOGGER.exception("Savant probe failed")
+                    break
+                except Exception:  # noqa: BLE001 - surface a generic connect error
+                    LOGGER.exception("Savant probe failed")
+                    break
 
             if probe is None:
-                errors["base"] = "cannot_connect"
+                errors["base"] = "connection_refused" if connection_refused else "cannot_connect"
             elif not probe.authorized:
                 errors["base"] = (
                     "invalid_auth" if probe.auth_response_seen else "no_auth_response"
