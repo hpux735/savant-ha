@@ -63,11 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # Button entities existed before Savant scenes used the native scene platform. Include
-    # the retired platform during unload so an entry reload drops its old runtime setup.
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        entry, [*PLATFORMS, Platform.BUTTON]
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hub = _get_hub(hass, entry)
         await hub.stop()

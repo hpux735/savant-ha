@@ -33,8 +33,8 @@ from aiohttp import WSMsgType, hdrs
 
 from . import uiconfig
 from .const import (
-    DASHBOARD_REQUEST_SCENES,
     DASHBOARD_REQUEST_APPLY_SCENE,
+    DASHBOARD_REQUEST_SCENES,
     DASHBOARD_STATE_RECENT_SERVICES,
     DEVICE_APP,
     DEVICE_MAKE,
@@ -56,6 +56,8 @@ from .const import (
     LOGGER,
     MUSIC_ZONE_PREFIX,
     RPM_SUBPROTOCOL,
+    SCENE_VERSION,
+    SCENES_STATE_KEY,
     URI_AUTH_REQUEST,
     URI_AUTH_RESPONSE,
     URI_DASHBOARD_REGISTER,
@@ -71,8 +73,6 @@ from .const import (
     URI_USER_DATA_REGISTER,
     USER_DATA_IMAGE_STATES,
     USER_DATA_INITIAL_STATES,
-    SCENES_STATE_KEY,
-    SCENE_VERSION,
     build_default_subscribe_keys,
     new_uid,
     room_from_state_key,
@@ -391,11 +391,7 @@ async def discover_hosts(
         },
     )
     if not proto.results:
-        LOGGER.warning(
-            "Savant discovery: no reply on UDP 9101/9103 for %s — is Home Assistant "
-            "on the same network (L2) as the host?",
-            host,
-        )
+        LOGGER.debug("Savant discovery: no reply on UDP 9101/9103 for %s", host or "broadcast")
     def _record_port(record: dict[str, Any]) -> int:
         try:
             return int(record.get("port", 0))
