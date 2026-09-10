@@ -11,14 +11,14 @@ import pytest
 
 from custom_components.savant_ha import savant_client as sc
 from custom_components.savant_ha.const import (
+    DASHBOARD_REQUEST_APPLY_SCENE,
     DASHBOARD_STATE_RECENT_SERVICES,
     ENVELOPE_KEY_MESSAGES,
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
     ENVELOPE_KEY_USER,
-    DASHBOARD_REQUEST_APPLY_SCENE,
-    SCENES_STATE_KEY,
     SCENE_VERSION,
+    SCENES_STATE_KEY,
     SVC_ENV_HVAC,
     URI_DEVICE_PRESENT,
     URI_STATE_REGISTER,
@@ -462,6 +462,28 @@ def test_refresh_discovery_resolves_uid_to_current_endpoint(monkeypatch):
         )
 
     monkeypatch.setattr(sc, "discover_host_by_uid", fake_discover)
+    asyncio.run(client._refresh_discovery())
+    assert client._host == "10.0.0.5"
+    assert client._port == 35299
+    assert client._home_id == "home-1"
+
+
+def test_refresh_discovery_uses_mdns_for_directed_uid_lookup(monkeypatch):
+    async def fake_mdns_hosts():
+        return ["10.0.0.5"]
+
+    client = SavantClient("", 0, host_uid="stable-host-uid", mdns_hosts=fake_mdns_hosts)
+
+    async def no_broadcast_reply(host_uid, timeout):
+        assert host_uid == "stable-host-uid"
+        return None
+
+    async def directed_reply(host, timeout):
+        assert host == "10.0.0.5"
+        return SavantHostInfo(host=host, port=35299, home_id="home-1", uid="stable-host-uid")
+
+    monkeypatch.setattr(sc, "discover_host_by_uid", no_broadcast_reply)
+    monkeypatch.setattr(sc, "discover_host", directed_reply)
     asyncio.run(client._refresh_discovery())
     assert client._host == "10.0.0.5"
     assert client._port == 35299

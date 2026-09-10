@@ -22,7 +22,7 @@ import socket
 import ssl
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
@@ -82,6 +82,7 @@ _StateCallback = Callable[[str, Any], None]
 _StatusCallback = Callable[[bool], None]
 _RoomsCallback = Callable[[set[str]], None]
 _ScenesCallback = Callable[[dict[str, dict[str, Any]]], None]
+_MdnsHostsCallback = Callable[[], Awaitable[list[str]]]
 
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
@@ -414,9 +415,12 @@ async def discover_host(host: str | None, timeout: float = 3.0) -> SavantHostInf
     """Discover a host's current control endpoint (PROTOCOL.md §1.1)."""
     records = await discover_hosts(host, timeout)
     if host:
-        for info in records:
-            if info.host == host:
+        matching_records = [info for info in records if info.host == host]
+        for info in matching_records:
+            if info.uid:
                 return info
+        if matching_records:
+            return matching_records[0]
     return records[0] if records else None
 
 
@@ -451,6 +455,7 @@ class SavantClient:
         username: str = "",
         password: str = "",
         subscribe_keys: list[str] | None = None,
+        mdns_hosts: _MdnsHostsCallback | None = None,
         reconnect_delay: float = 5.0,
         reconnect_max_delay: float = 60.0,
     ) -> None:
@@ -470,6 +475,7 @@ class SavantClient:
         # the hostToken in exchange for {user, password}, so no cloud tokens are needed.
         self._has_credentials = bool(self._host_token or (username and password))
         self._subscribe_keys = list(subscribe_keys or [])
+        self._mdns_hosts = mdns_hosts
         self._subscribed_keys: set[str] = set(self._subscribe_keys)
         self._reconnect_delay = reconnect_delay
         self._reconnect_max_delay = reconnect_max_delay
@@ -551,6 +557,12 @@ class SavantClient:
         try:
             if self._host_uid:
                 info = await discover_host_by_uid(self._host_uid, timeout=3.0)
+                if info is None and self._mdns_hosts is not None:
+                    for host in await self._mdns_hosts():
+                        candidate = await discover_host(host, timeout=3.0)
+                        if candidate is not None and candidate.uid == self._host_uid:
+                            info = candidate
+                            break
             else:
                 info = await discover_host(self._host or None, timeout=3.0)
         except (TimeoutError, OSError):

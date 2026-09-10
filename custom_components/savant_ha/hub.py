@@ -40,6 +40,7 @@ from .const import (
     room_from_state_key,
     room_state_keys,
 )
+from .mdns import async_savant_mdns_hosts
 from .savant_client import SavantClient
 
 
@@ -99,6 +100,9 @@ class SavantHub:
                         audio_zone_state_keys(device["component"], device["zone"])
                     )
 
+        async def _async_mdns_hosts() -> list[str]:
+            return await async_savant_mdns_hosts(hass)
+
         self.client = SavantClient(
             host=data.get(CONF_HOST, ""),
             port=int(data.get(CONF_PORT) or 0),
@@ -111,6 +115,7 @@ class SavantHub:
             username=options.get(CONF_USERNAME) or data.get(CONF_USERNAME, ""),
             password=options.get(CONF_PASSWORD) or data.get(CONF_PASSWORD, ""),
             subscribe_keys=list(dict.fromkeys(subscribe_keys)),
+            mdns_hosts=_async_mdns_hosts,
         )
         self.client.on_state_update = self._on_state_update
         self.client.on_status = self._on_status
