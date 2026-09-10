@@ -33,7 +33,7 @@ from .const import (
     VERB_SET_COOL_POINT,
     VERB_SET_HEAT_POINT,
 )
-from .control import climate_identity, climate_scope, thermostat_args
+from .control import climate_identity, climate_scope, coerce_number, thermostat_args
 from .entity import SavantEntity
 from .hub import SavantHub
 
@@ -118,8 +118,7 @@ class SavantClimate(SavantEntity, ClimateEntity):
         return thermostat_args(self._addresses, self._suffix)
 
     def _num(self, attr: str) -> float | None:
-        value = self._state(self._key(attr))
-        return float(value) if isinstance(value, (int, float)) else None
+        return coerce_number(self._state(self._key(attr)))
 
     def _bool(self, attr: str) -> bool:
         return bool(self._state(self._key(attr)))
