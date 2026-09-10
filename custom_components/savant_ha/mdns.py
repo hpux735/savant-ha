@@ -18,8 +18,8 @@ async def async_savant_mdns_hosts(hass: HomeAssistant) -> list[str]:
     service_names: set[str] = set()
 
     def _service_changed(
-        _zeroconf: object,
-        _service_type: str,
+        zeroconf: object,  # noqa: ARG001 - required keyword name from python-zeroconf
+        service_type: str,  # noqa: ARG001 - required keyword name from python-zeroconf
         name: str,
         state_change: ServiceStateChange,
     ) -> None:
