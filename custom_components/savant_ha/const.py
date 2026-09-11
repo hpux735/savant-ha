@@ -123,6 +123,7 @@ VERB_SKIP_DOWN = "SkipDown"
 VERB_SEEK = "Seek"
 VERB_ROOM_BRIGHTNESS = "__RoomSetBrightness"
 VERB_DIMMER_SET = "DimmerSet"
+VERB_RF_SHADE_SET = "RFShadeSet"  # PROTOCOL.md §7.5.1, archive-declared Lutron command.
 VERB_SET_COOL_POINT = "SetCoolPointTemperature"
 VERB_SET_HEAT_POINT = "SetHeatPointTemperature"
 VERB_HVAC_MODE_AUTO = "SetHVACModeAuto"

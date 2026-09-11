@@ -237,6 +237,9 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
                                 "delay_time": d.get(_pick(cols, ("delayTime",))),
                                 "preset_number": d.get(_pick(cols, ("presetNumber",))),
                                 "scene_number": d.get(_pick(cols, ("sceneNumber",))),
+                                "shade_command": str(
+                                    d.get(_pick(cols, ("pressCommand", "dimmerCommand"))) or ""
+                                ),
                             }
                             if device_type == "cover"
                             else {}

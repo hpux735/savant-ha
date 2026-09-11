@@ -11,7 +11,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .const import HVAC_STATE_PREFIX, SVC_AV_SAVANTMUSIC, SVC_ENV_HVAC, VERB_DIMMER_SET
+from .const import (
+    HVAC_STATE_PREFIX,
+    SVC_AV_SAVANTMUSIC,
+    SVC_ENV_HVAC,
+    VERB_DIMMER_SET,
+)
 
 # ``stateName`` for a thermostat names only the current-temperature key; the unit suffix
 # (``_1``, ``_2``, …) and the component/logical prefix are derived around this marker.
@@ -68,6 +73,17 @@ def dimmer_args(
     """
     control = device.get("control") if isinstance(device.get("control"), dict) else {}
     args: dict[str, Any] = light_address_args(str(device.get("addresses") or ""))
+    if ".DimmerLevel_" in str(device.get("state_name") or ""):
+        # Lutron HomeworksQS omits the generic color/curve fields (PROTOCOL.md §7.3).
+        args.update(
+            {
+                "DimmerLevel": level,
+                "FadeTime": "2" if use_last_dimmer_value else 2.0,
+                "useLastDimmerValue": use_last_dimmer_value,
+                "IsTrueImage": False,
+            }
+        )
+        return args
     args["DimmerLevel"] = level
     args["useLastDimmerValue"] = use_last_dimmer_value
     fade_time = control.get("fade_time")
@@ -190,6 +206,17 @@ def shade_set_args(
     return args
 
 
+def rf_shade_set_args(address: str, position: int) -> dict[str, Any]:
+    """Build the observed Lutron HomeworksQS ``RFShadeSet`` arguments (PROTOCOL.md §7.5.1)."""
+    return {
+        "Address1": address,
+        "FadeTime": "0",
+        "PresetNumber": "0",
+        "DelayTime": "0",
+        "ShadeLevel": position,
+    }
+
+
 def shade_component_logical(state_name: str) -> tuple[str, str]:
     """The (component, logical_component) for a shade, from its ``stateName``."""
     prefix = state_name.rsplit(".", 1)[0] if "." in state_name else ""
@@ -253,6 +280,11 @@ def parse_light_state(state_name: str, value: Any) -> tuple[bool | None, int | N
             level = int(value)
             return level > 0, _dimmer_brightness(level)
         return None, None
+    if ".DimmerLevel_" in state_name:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            level = int(value)
+            return level > 0, _dimmer_brightness(level)
+        return None, None
     if "CurrentColor" in state_name or "CurrentBleColor" in state_name:
         if isinstance(value, str) and value:
             return _parse_color(value)
@@ -278,7 +310,7 @@ def parse_light_color(state_name: str, value: Any) -> tuple[int, int, int, int] 
 
 
 def coerce_number(value: Any) -> float | None:
-    """Coerce a state value to float (the host reports temperatures as strings)."""
+    """Coerce a state value to float, including captured unit-suffixed temperatures."""
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -287,7 +319,8 @@ def coerce_number(value: Any) -> float | None:
         try:
             return float(value.strip())
         except ValueError:
-            return None
+            match = re.match(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)", value.strip())
+            return float(match.group()) if match else None
     return None
 
 

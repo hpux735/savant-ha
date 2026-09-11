@@ -168,6 +168,11 @@ Notes for implementers:
 - Boolean mode/speed flags: `IsCurrentHVACMode{Off,Cool,Heat,Auto,...}`, `IsCurrentFanSpeed*`,
   `IsThermostatCurrentFanMode{Auto,On,Off}`, `IsThermostatHolding`, `ThermostatAwayState`.
 
+Some CoolMaster Net controllers use two archive-derived state-key address suffixes, e.g.
+`ThermostatCurrentTemperature_<address1>_<address2>`; retain the second token and its
+zero padding. Captured values can include a unit suffix such as `"67F"`. No CoolMaster
+control request has been captured, so its setter payload must not be inferred.
+
 ### 5.2 Rooms — `<Room>.*` (+ how to derive the room list)
 
 Per-room attributes: `ActiveService`, `ActiveServices`, `LastActiveService`,
@@ -317,6 +322,7 @@ Observed verbs used by this integration:
 | `SetFanModeAuto` / `SetFanModeCycle` / `SetFanModeOn` | HVAC | `{ThermostatAddress:"1", ThermostatAddress2:"(null)"}` |
 | `ShadeUp` / `ShadeDown` / `ShadeStop` | shade | `{Address1..5}` (`SVC_ENV_SHADE`) |
 | `ShadeSet` | shade | native address shape plus string `{ShadeLevel, FadeTime, DelayTime, PresetNumber, SceneNumber}` (`SVC_ENV_SHADE`; sibling PROTOCOL.md §7.5) |
+| `RFShadeSet` | Lutron HomeworksQS shade | archive-declared command; no `variantID`, integer `{Address1, FadeTime:"0", DelayTime:"0", PresetNumber:"0", ShadeLevel}` (sibling PROTOCOL.md §7.5.1) |
 
 HVAC scope is archive-derived: `component`/`logicalComponent` come from the entity's
 `stateName`, `serviceType:"SVC_ENV_HVAC"`, `variantID:"1"`, `zone:""`.

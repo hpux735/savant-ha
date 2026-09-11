@@ -67,7 +67,7 @@ class SavantEntity(CoordinatorEntity[SavantCoordinator], Entity):
         service_type: str,
         zone: str = "",
         logical_component: str = "",
-        variant_id: str = "",
+        variant_id: str | None = "",
         request_args: dict[str, Any] | None = None,
     ) -> None:
         await self.hub.client.service_request(

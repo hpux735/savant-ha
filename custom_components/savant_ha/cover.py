@@ -14,8 +14,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DEVICE_TYPE_COVER, DOMAIN, SVC_ENV_SHADE
-from .control import shade_address_args, shade_component_logical, shade_set_args
+from .const import DEVICE_TYPE_COVER, DOMAIN, SVC_ENV_SHADE, VERB_RF_SHADE_SET
+from .control import rf_shade_set_args, shade_address_args, shade_component_logical, shade_set_args
 from .entity import SavantEntity
 from .hub import SavantHub
 
@@ -42,6 +42,13 @@ class SavantCover(SavantEntity, CoverEntity):
         self._state_name = str(device.get("state_name") or "")
         self._addresses = str(device.get("addresses") or "")
         self._control = dict(device.get("control") or {})
+        self._shade_command = str(self._control.get("shade_command") or "ShadeSet")
+        if self._shade_command == VERB_RF_SHADE_SET:
+            self._attr_supported_features = (
+                CoverEntityFeature.OPEN
+                | CoverEntityFeature.CLOSE
+                | CoverEntityFeature.SET_POSITION
+            )
         self._component, self._logical_component = shade_component_logical(self._state_name)
         self._attr_unique_id = f"{hub.uid}_cover_{device['id']}"
 
@@ -61,7 +68,7 @@ class SavantCover(SavantEntity, CoverEntity):
         return shade_address_args(self._addresses, count)
 
     async def _shade_request(
-        self, request: str, request_args: dict[str, str] | None = None
+        self, request: str, request_args: dict[str, Any] | None = None
     ) -> None:
         await self._service_request(
             request,
@@ -69,21 +76,35 @@ class SavantCover(SavantEntity, CoverEntity):
             service_type=SVC_ENV_SHADE,
             zone=self._room,
             logical_component=self._logical_component,
-            variant_id="1",
+            variant_id=None if request == VERB_RF_SHADE_SET else "1",
             request_args=request_args or self._address_args(),
         )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
+        if self._shade_command == VERB_RF_SHADE_SET:
+            await self.async_set_cover_position(**{ATTR_POSITION: 100})
+            return
         await self._shade_request("ShadeUp")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
+        if self._shade_command == VERB_RF_SHADE_SET:
+            await self.async_set_cover_position(**{ATTR_POSITION: 0})
+            return
         await self._shade_request("ShadeDown")
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
+        if self._shade_command == VERB_RF_SHADE_SET:
+            return
         await self._shade_request("ShadeStop")
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         position = int(kwargs[ATTR_POSITION])
+        if self._shade_command == VERB_RF_SHADE_SET:
+            await self._shade_request(
+                VERB_RF_SHADE_SET,
+                rf_shade_set_args(self._addresses.split(",", 1)[0].strip(), position),
+            )
+            return
         await self._shade_request(
             "ShadeSet",
             shade_set_args(

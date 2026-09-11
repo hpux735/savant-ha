@@ -619,7 +619,7 @@ class SavantClient:
         service_type: str,
         zone: str = "",
         logical_component: str = "",
-        variant_id: str = "",
+        variant_id: str | None = "",
         request_args: dict[str, Any] | None = None,
     ) -> None:
         """Emit a ``service/request`` control message (PROTOCOL.md §6)."""
@@ -628,9 +628,10 @@ class SavantClient:
             "serviceType": service_type,
             "zone": zone,
             "logicalComponent": logical_component,
-            "variantID": variant_id,
             "request": request,
         }
+        if variant_id is not None:
+            message["variantID"] = variant_id
         if request_args:
             message["requestArgs"] = request_args
         await self.request("service/request", [message])

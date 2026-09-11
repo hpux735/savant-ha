@@ -76,6 +76,22 @@ def test_dimmer_args_uses_technology_for_curve():
     assert control.dimmer_args(device, 50)["Curve"] == "Infinite Color"
 
 
+def test_lutron_dimmer_args_use_captured_payload_shape():
+    device = _light(addresses="17", state_name="Lutron.Homeworks.DimmerLevel_17")
+    assert control.dimmer_args(device, 42) == {
+        "Address1": "17",
+        "Address2": "(null)",
+        "Address3": "(null)",
+        "Address4": "(null)",
+        "Address5": "(null)",
+        "Address6": "(null)",
+        "DimmerLevel": 42,
+        "FadeTime": 2.0,
+        "useLastDimmerValue": False,
+        "IsTrueImage": False,
+    }
+
+
 def test_color_dimmer_args_uses_nested_rgbw_color_without_flat_defaults():
     device = _light(
         state_name="Savant.Lighting.CurrentColor_6_006",
@@ -259,6 +275,16 @@ def test_shade_set_args_preserves_bond_address_shape():
     }
 
 
+def test_rf_shade_set_args_match_lutron_capture():
+    assert control.rf_shade_set_args("17", 42) == {
+        "Address1": "17",
+        "FadeTime": "0",
+        "PresetNumber": "0",
+        "DelayTime": "0",
+        "ShadeLevel": 42,
+    }
+
+
 def test_shade_component_logical_from_state_name():
     assert control.shade_component_logical(
         "Bond Bridge.Lighting_controller.ShadeLevel_c2aac4873a450684"
@@ -373,9 +399,14 @@ def test_parse_light_state_unrecognized_returns_none():
     )
 
 
+def test_parse_light_state_recognizes_lutron_dimmer_level():
+    assert control.parse_light_state("Lutron.Homeworks.DimmerLevel_17", 42) == (True, 107)
+
+
 def test_coerce_number_accepts_strings_and_numbers():
     assert control.coerce_number("72") == 72.0
     assert control.coerce_number(72) == 72.0
     assert control.coerce_number("72.5") == 72.5
+    assert control.coerce_number("67F") == 67.0
     assert control.coerce_number("not-a-number") is None
     assert control.coerce_number(True) is None
