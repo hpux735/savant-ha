@@ -104,6 +104,11 @@ class SavantClimate(SavantEntity, ClimateEntity):
             self._component,
             self._logical_component,
         ) = climate_identity(device.get("state_name", ""), suffix)
+        self._is_coolmaster = self._suffix.count("_") >= 2
+        if self._is_coolmaster:
+            # Only CoolMaster temperature state is captured; its control payload is unknown.
+            self._attr_hvac_modes = []
+            self._attr_supported_features = ClimateEntityFeature(0)
         self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
 
     # ------------------------------------------------------------ state keys
@@ -178,6 +183,8 @@ class SavantClimate(SavantEntity, ClimateEntity):
         return None
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        if self._is_coolmaster:
+            return
         verb = _MODE_VERBS.get(hvac_mode)
         if verb is None:
             return
@@ -188,6 +195,8 @@ class SavantClimate(SavantEntity, ClimateEntity):
         )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
+        if self._is_coolmaster:
+            return
         verb = _FAN_MODE_VERBS.get(fan_mode.lower())
         if verb is not None:
             await self._service_request(
@@ -197,6 +206,8 @@ class SavantClimate(SavantEntity, ClimateEntity):
             )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
+        if self._is_coolmaster:
+            return
         low = kwargs.get(_TARGET_TEMP_LOW)
         high = kwargs.get(_TARGET_TEMP_HIGH)
         if low is not None or high is not None:

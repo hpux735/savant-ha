@@ -54,6 +54,13 @@ class SavantCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         return self.hub.snapshot()
 
+    @callback
+    def async_set_push_data(self, data: dict[str, Any]) -> None:
+        """Publish a host push without the coordinator's noisy manual-update debug log."""
+        self.data = data
+        self.last_update_success = True
+        self.async_update_listeners()
+
 
 class SavantHub:
     """Owns the client lifecycle and the state store for one config entry."""
@@ -198,7 +205,7 @@ class SavantHub:
     @callback
     def _flush(self) -> None:
         self._flush_scheduled = False
-        self.coordinator.async_set_updated_data(self.snapshot())
+        self.coordinator.async_set_push_data(self.snapshot())
         for callback_list in self._callbacks.values():
             for fn in list(callback_list):
                 fn()
