@@ -194,10 +194,18 @@ def room_from_state_key(key: str) -> str | None:
 
 def room_state_keys(rooms: set[str] | list[str]) -> list[str]:
     """Return the ``<room>.<attr>`` subscription keys for a set of room names."""
-    return [f"{room}.{attr}" for room in rooms for attr in ROOM_ATTRIBUTES]
+    # The host can fan a controller reading out to every room's summary-temperature
+    # key. Climate entities use their controller-specific stateName instead, so avoid
+    # subscribing to this misleading aggregate while retaining it as a recognized room
+    # attribute if it arrives unsolicited (PROTOCOL.md §5.1-5.2).
+    return [
+        f"{room}.{attr}"
+        for room in rooms
+        for attr in ROOM_ATTRIBUTES
+        if attr != ROOM_CURRENT_TEMPERATURE
+    ]
 
 # Global attributes (PROTOCOL.md §5.4).
-GLOBAL_CURRENT_TEMPERATURE = "global.CurrentTemperature"
 GLOBAL_LIGHTS_ON = "global.LightsAreOn"
 
 # Legacy Audio Zone prefix (PROTOCOL.md §5.3). New config-archive-derived zones retain
@@ -275,7 +283,6 @@ MUSIC_ZONE_ATTRIBUTES = (
 
 # Global keys that need no per-room prefix (PROTOCOL.md §5.4).
 GLOBAL_STATE_KEYS = (
-    "global.CurrentTemperature",
     "global.LightsAreOn",
     "global.SonosGroups",
     "Energy.Grid.IsAvailable",

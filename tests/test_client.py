@@ -223,9 +223,9 @@ def test_subscribe_keys_include_every_category():
     keys = build_default_subscribe_keys(rooms=["Living Room"])
     assert any(k == "HVAC Controller.HVAC_controller.ThermostatCurrentTemperature_1" for k in keys)
     assert any(k == "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" for k in keys)
-    assert "global.CurrentTemperature" in keys
+    assert "global.CurrentTemperature" not in keys
     assert "Living Room.RoomLightsAreOn" in keys
-    assert "Living Room.RoomCurrentTemperature" in keys
+    assert "Living Room.RoomCurrentTemperature" not in keys
 
 
 def test_device_state_keys_uses_archive_state_name_and_hvac_scope():
@@ -368,7 +368,7 @@ def test_room_from_state_key():
 def test_room_state_keys_covers_all_attributes():
     keys = room_state_keys({"Living Room"})
     assert "Living Room.RoomLightsAreOn" in keys
-    assert "Living Room.RoomCurrentTemperature" in keys
+    assert "Living Room.RoomCurrentTemperature" not in keys
     assert "Living Room.RoomFansAreOn" in keys
 
 

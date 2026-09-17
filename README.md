@@ -64,7 +64,6 @@ extra room names) live behind the integration's **Configure** button.
 | Fan | `FanEntities` | on/off (read-only for now) |
 | Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: now-playing, power, volume, transport, album art; Apple TV: archive-declared power, volume, and play/pause |
 | Scene | Savant dashboard `scenesAndFoldersReduced` updates | standalone native `scene.turn_on` activation |
-| Sensor | `global.CurrentTemperature`, `<room>.RoomCurrentTemperature` | temperature |
 
 ## Limitations / open questions
 
