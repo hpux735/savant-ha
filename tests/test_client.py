@@ -733,5 +733,59 @@ def test_browse_music_preserves_the_selected_opaque_node():
     assert sent[0][1][0]["node"] is node
 
 
+def test_search_music_waits_for_refresh_then_repeats_the_same_search_uuid():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]], bool]] = []
+
+    async def run():
+        async def fake_request(uri, messages, *, include_identity):
+            sent.append((uri, messages, include_identity))
+
+        client._request_music = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(client.async_search_music("Music", "Audio Zone 1", "Beatles"))
+        await asyncio.sleep(0)
+        uri, messages, _ = sent[0]
+        search_uuid = messages[0]["arguments"]["uuid"]
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": uri,
+                    "messages": [{"requestId": messages[0]["requestId"], "screenArguments": {"searchReady": False}, "nodes": []}],
+                }
+            )
+        )
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": "state/update",
+                    "messages": [{"state": "Music.Audio Zone 1.refreshLMQ", "value": f"search:{search_uuid}"}],
+                }
+            )
+        )
+        await asyncio.sleep(0)
+        _, second_messages, _ = sent[1]
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": uri,
+                    "messages": [{"requestId": second_messages[0]["requestId"], "screenArguments": {"searchReady": True}, "nodes": [{"title": "Beatles"}]}],
+                }
+            )
+        )
+        return await task
+
+    result = asyncio.run(run())
+    assert sent[0][0] == "music/Music/Audio Zone 1/SVC_AV_SAVANTMUSIC/search"
+    assert sent[0][2] is False
+    assert sent[0][1][0]["clientType"] == "android"
+    assert sent[0][1][0]["arguments"] == {
+        "filter": "all",
+        "searchTerm": "Beatles",
+        "services": ["plex", "tunein", "amazonmusic", "playlists"],
+        "uuid": sent[1][1][0]["arguments"]["uuid"],
+    }
+    assert result["nodes"] == [{"title": "Beatles"}]
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

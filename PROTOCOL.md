@@ -261,8 +261,14 @@ the response carries `{requestId,screenArguments,nodes}` on the same URI. For `/
 preserve the selected node's opaque routing fields, especially its JSON-encoded
 `arguments.item`, rather than deriving a request from its title. Nodes with
 `actionType:"browsable"` are folders; action-node playback effects are not verified.
-The observed `/search` request opens search metadata and recent items but does not contain a
-typed query, so text search, paging beyond `offset:0`, and result playback remain unsupported.
+Typed search is capture-verified on `/search` with `clientType:"android"`, no outer
+identity fields, and `arguments:{filter:"all",searchTerm,services:["plex","tunein",
+"amazonmusic","playlists"],uuid}`. An initial `{searchReady:false,nodes:[]}` means wait
+for `refreshLMQ` or `refreshLMQ3` containing that UUID, then repeat the same request with a
+new `requestId`. Search results are `displayType:"searchList"` nodes. Follow their captured
+`query:"browse"|"browseSearch"` on the matching endpoint; a recent-search track submitted
+to `/browse` produced matching `CurrentSongName`, `CurrentPauseStatus:false`, and elapsed-time
+state. Non-`all` filters and paging beyond `offset:0` remain unsupported.
 
 ### 5.4 Apple TV endpoints
 The current host's config archive declares `SVC_AV_APPLEREMOTEMEDIASERVER` and
@@ -353,8 +359,8 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
    `service/request`, not yet captured). Shade control is documented in the sibling
    `PROTOCOL.md` §6.1.1 and §7.5: `ShadeLevel` is 0 (closed) through 100 (open),
    `ShadeSet` updates may be asynchronous and controller positions may quantize by ±1.
-4. Music action-node playback, text-search submission, and page traversal beyond
-   `limit:50, offset:0` remain unverified.
+4. Music non-`all` search filters and page traversal beyond `limit:50, offset:0` remain
+   unverified.
 5. ~~`state/update` delta vs snapshot semantics~~ — RESOLVED: registration returns an
    immediate per-key snapshot (empty-string value when idle), then delta-only pushes
    on change (§5.2; sibling PROTOCOL.md §6.6).

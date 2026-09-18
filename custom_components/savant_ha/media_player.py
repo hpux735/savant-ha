@@ -12,8 +12,10 @@ from homeassistant.components.media_player import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
     MediaType,
+    SearchMedia,
+    SearchMediaQuery,
 )
-from homeassistant.components.media_player.errors import BrowseError
+from homeassistant.components.media_player.errors import BrowseError, SearchError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -158,7 +160,11 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if VERB_SEEK in self._requests and self._value(_SEEK_DISABLED) is False:
             features |= MediaPlayerEntityFeature.SEEK
         if self._service_type == SVC_AV_SAVANTMUSIC:
-            features |= MediaPlayerEntityFeature.BROWSE_MEDIA
+            features |= (
+                MediaPlayerEntityFeature.BROWSE_MEDIA
+                | MediaPlayerEntityFeature.PLAY_MEDIA
+                | MediaPlayerEntityFeature.SEARCH_MEDIA
+            )
         return features
 
     @property
@@ -322,10 +328,50 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node = self._browse_nodes.get(media_content_id)
         if node is None:
             raise BrowseError("Savant media item is no longer available; browse again")
-        result = await self.hub.client.async_browse_music(
-            self._component, self._logical_component, operation="browse", node=node
-        )
+        try:
+            result = await self.hub.client.async_follow_music_node(
+                self._component, self._logical_component, node
+            )
+        except ValueError as err:
+            raise BrowseError("Savant media item cannot be opened") from err
         return self._browse_result(result, str(node.get("title") or "Savant Music"))
+
+    async def async_search_media(self, query: SearchMediaQuery) -> SearchMedia:
+        """Search captured Savant Music catalogs with the supported all-service scope."""
+        if self._service_type != SVC_AV_SAVANTMUSIC:
+            raise SearchError("Savant media search is available only for Savant Music")
+        try:
+            result = await self.hub.client.async_search_music(
+                self._component, self._logical_component, query.search_query
+            )
+        except ValueError as err:
+            raise SearchError("Savant media search failed") from err
+        nodes = result.get("nodes")
+        return SearchMedia(
+            result=[
+                self._browse_node(node)
+                for node in nodes
+                if isinstance(node, dict) and node.get("displayType") == "searchList"
+            ]
+            if isinstance(nodes, list)
+            else []
+        )
+
+    async def async_play_media(
+        self, media_type: MediaType | str, media_id: str, **kwargs: object
+    ) -> None:
+        """Submit a captured action-node request; host state confirms playback."""
+        if self._service_type != SVC_AV_SAVANTMUSIC or media_type != MediaType.MUSIC:
+            return
+        node = self._browse_nodes.get(media_id)
+        if node is None or node.get("actionType") != "action":
+            return
+        try:
+            await self.hub.client.async_follow_music_node(
+                self._component, self._logical_component, node
+            )
+        except ValueError:
+            return
 
     def _browse_result(self, result: dict[str, object], title: str) -> BrowseMedia:
         nodes = result.get("nodes")
@@ -355,7 +401,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             media_content_id=node_id,
             media_content_type=MediaType.MUSIC,
             title=title,
-            can_play=False,
+            can_play=node.get("actionType") == "action",
             can_expand=browsable,
         )
 

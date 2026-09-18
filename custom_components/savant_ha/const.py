@@ -271,6 +271,7 @@ MUSIC_ZONE_ATTRIBUTES = (
     "CurrentRemainingTime",
     "CurrentProgress",
     "CurrentTransportActions",
+    "refreshLMQ",
     "TransportSet",
     "SeekDisabled",
     "SongLiked",

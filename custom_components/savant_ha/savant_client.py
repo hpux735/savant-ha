@@ -88,6 +88,7 @@ _MdnsHostsCallback = Callable[[], Awaitable[list[str]]]
 AUTH_TIMEOUT = 5.0
 ARTWORK_TIMEOUT = 10.0
 MUSIC_BROWSE_TIMEOUT = 10.0
+MUSIC_SEARCH_READY_TIMEOUT = 5.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
 _JPEG_SOI = b"\xff\xd8\xff"
 _JPEG_EOI = b"\xff\xd9"
@@ -506,6 +507,9 @@ class SavantClient:
         self._pending_music_requests: dict[
             tuple[str, str], asyncio.Future[dict[str, Any]]
         ] = {}
+        self._pending_music_search_refresh: dict[
+            tuple[str, str], asyncio.Future[None]
+        ] = {}
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
@@ -615,6 +619,23 @@ class SavantClient:
         LOGGER.debug("Savant -> %s %s", uri, _redact(messages))
         await self._ws.send_bytes(_pack(envelope))
 
+    async def _request_music(
+        self,
+        uri: str,
+        messages: list[dict[str, Any]],
+        *,
+        include_identity: bool,
+    ) -> None:
+        """Send a Music RPC with its capture-specific envelope variant."""
+        if include_identity:
+            await self.request(uri, messages)
+            return
+        if self._ws is None or self._ws.closed:
+            raise SavantConnectionError("not connected")
+        await self._ws.send_bytes(
+            _pack({ENVELOPE_KEY_MESSAGES: messages, ENVELOPE_KEY_URI: uri})
+        )
+
     async def service_request(
         self,
         request: str,
@@ -711,21 +732,102 @@ class SavantClient:
         """Request an observed Savant Music root or folder listing (sibling PROTOCOL.md §8)."""
         if operation not in {"getRoot", "browse"}:
             raise ValueError(f"Unsupported Savant music operation: {operation}")
+        return await self._async_music_request(
+            component,
+            logical_component,
+            operation=operation,
+            node=node,
+            arguments=None,
+            client_type="iPhone",
+            include_identity=True,
+        )
+
+    async def async_search_music(
+        self, component: str, logical_component: str, search_term: str
+    ) -> dict[str, Any]:
+        """Submit the captured typed Music search flow (sibling PROTOCOL.md §8.4)."""
+        search_uuid = str(uuid.uuid4())
+        arguments = {
+            "filter": "all",
+            "searchTerm": search_term,
+            "services": ["plex", "tunein", "amazonmusic", "playlists"],
+            "uuid": search_uuid,
+        }
+        prefix = f"{component}.{logical_component}."
+        refresh: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._pending_music_search_refresh[(prefix, search_uuid)] = refresh
+        try:
+            result = await self._async_music_request(
+                component,
+                logical_component,
+                operation="search",
+                node=None,
+                arguments=arguments,
+                client_type="android",
+                include_identity=False,
+            )
+            screen_arguments = result.get("screenArguments")
+            if isinstance(screen_arguments, dict) and screen_arguments.get("searchReady") is True:
+                return result
+            await asyncio.wait_for(refresh, MUSIC_SEARCH_READY_TIMEOUT)
+            return await self._async_music_request(
+                component,
+                logical_component,
+                operation="search",
+                node=None,
+                arguments=arguments,
+                client_type="android",
+                include_identity=False,
+            )
+        except TimeoutError as err:
+            raise SavantError("Savant music search did not become ready") from err
+        finally:
+            self._pending_music_search_refresh.pop((prefix, search_uuid), None)
+
+    async def async_follow_music_node(
+        self, component: str, logical_component: str, node: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Follow a captured typed-search result node (sibling PROTOCOL.md §8.4-8.5)."""
+        operation = node.get("query")
+        if operation not in {"browse", "browseSearch"}:
+            raise ValueError("Unsupported Savant Music result node")
+        return await self._async_music_request(
+            component,
+            logical_component,
+            operation=operation,
+            node=node,
+            arguments=None,
+            client_type="android",
+            include_identity=False,
+        )
+
+    async def _async_music_request(
+        self,
+        component: str,
+        logical_component: str,
+        *,
+        operation: str,
+        node: dict[str, Any] | None,
+        arguments: dict[str, Any] | None,
+        client_type: str,
+        include_identity: bool,
+    ) -> dict[str, Any]:
+        """Send and correlate one observed Music RPC request."""
         request_id = uuid.uuid4().hex
         uri = f"music/{component}/{logical_component}/SVC_AV_SAVANTMUSIC/{operation}"
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         self._pending_music_requests[(uri, request_id)] = future
         message: dict[str, Any] = {
-            "clientType": "iPhone",
+            "clientType": client_type,
             "limit": 50,
             "offset": 0,
             "requestId": request_id,
             "version": 1,
             "node": node,
-            "arguments": None,
+            "arguments": arguments,
         }
         try:
-            await self.request(uri, [message])
+            await self._request_music(uri, [message], include_identity=include_identity)
             return await asyncio.wait_for(future, MUSIC_BROWSE_TIMEOUT)
         except TimeoutError as err:
             raise SavantError("Savant music browse timed out") from err
@@ -928,6 +1030,10 @@ class SavantClient:
             if not future.done():
                 future.set_exception(SavantConnectionError("connection lost"))
         self._pending_music_requests.clear()
+        for future in self._pending_music_search_refresh.values():
+            if not future.done():
+                future.set_exception(SavantConnectionError("connection lost"))
+        self._pending_music_search_refresh.clear()
         if self._auth_task is not None:
             self._auth_task.cancel()
             # CancelledError is a BaseException — suppress it explicitly too.
@@ -1015,6 +1121,8 @@ class SavantClient:
                     state = message.get("state")
                     if isinstance(state, str) and self.on_state_update is not None:
                         self.on_state_update(state, message.get("value"))
+                    if isinstance(state, str):
+                        self._handle_music_search_refresh(state, message.get("value"))
         elif uri == URI_DEVICE_RECOGNIZED:
             self._handle_device_recognized(messages)
         elif uri == URI_AUTH_RESPONSE:
@@ -1116,6 +1224,16 @@ class SavantClient:
             future = self._pending_music_requests.get((uri, request_id))
             if future is not None and not future.done():
                 future.set_result(message)
+
+    def _handle_music_search_refresh(self, state: str, value: Any) -> None:
+        """Resolve typed-search readiness from the observed refresh state families."""
+        if not (state.endswith(".refreshLMQ") or state.endswith(".refreshLMQ3")):
+            return
+        if not isinstance(value, str):
+            return
+        for (prefix, search_uuid), future in self._pending_music_search_refresh.items():
+            if state.startswith(prefix) and search_uuid in value and not future.done():
+                future.set_result(None)
 
     def _emit_rooms(self, rooms: set[str]) -> None:
         rooms = {r for r in rooms if isinstance(r, str) and r}
