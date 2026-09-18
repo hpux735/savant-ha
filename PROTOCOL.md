@@ -269,6 +269,9 @@ new `requestId`. Search results are `displayType:"searchList"` nodes. Follow the
 `query:"browse"|"browseSearch"` on the matching endpoint; a recent-search track submitted
 to `/browse` produced matching `CurrentSongName`, `CurrentPauseStatus:false`, and elapsed-time
 state. Non-`all` filters and paging beyond `offset:0` remain unsupported.
+Browse-node `artworkKey` values use the same `session/fileDownload` wrapper as now-playing art,
+with `type:"thumbnailArtwork"`; serve the returned JPEG through Home Assistant's browse-image
+proxy without exposing the opaque artwork key in media IDs.
 The captured track selection followed an earlier Music `PowerOn`; selecting a track while its
 zone is off is not verified. Wait for the room's nonempty `ActiveService` state after `PowerOn`
 before submitting the track node. Provider/browser-session expiry behavior is not captured.

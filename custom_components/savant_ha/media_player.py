@@ -101,6 +101,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._optimistic_state: MediaPlayerState | None = None
         self._optimistic_volume: float | None = None
         self._browse_nodes: dict[str, dict[str, object]] = {}
+        self._browse_artwork: dict[str, bytes] = {}
         self._music_active = asyncio.Event()
 
     def _key(self, attr: str) -> str:
@@ -331,6 +332,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             raise BrowseError("Savant media browsing is available only for Savant Music")
         if media_content_id is None:
             self._browse_nodes.clear()
+            self._browse_artwork.clear()
             result = await self.hub.client.async_browse_music(
                 self._component, self._logical_component, operation="getRoot"
             )
@@ -393,6 +395,31 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         except ValueError:
             return
 
+    async def async_get_browse_image(
+        self,
+        media_content_type: str,
+        media_content_id: str,
+        media_image_id: str | None = None,
+    ) -> tuple[bytes | None, str | None]:
+        """Fetch a browse node thumbnail (sibling PROTOCOL.md §8.2)."""
+        if self._service_type != SVC_AV_SAVANTMUSIC:
+            return None, None
+        node = self._browse_nodes.get(media_content_id)
+        artwork_key = node.get("artworkKey") if node is not None else None
+        if not isinstance(artwork_key, str) or not artwork_key:
+            return None, None
+        artwork = self._browse_artwork.get(artwork_key)
+        if artwork is None:
+            artwork = await self.hub.client.async_get_artwork(
+                self._component,
+                self._logical_component,
+                artwork_key,
+                artwork_type="thumbnailArtwork",
+            )
+            if artwork is not None:
+                self._browse_artwork[artwork_key] = artwork
+        return artwork, "image/jpeg" if artwork is not None else None
+
     def _browse_result(self, result: dict[str, object], title: str) -> BrowseMedia:
         nodes = result.get("nodes")
         children = (
@@ -427,6 +454,11 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             title=title,
             can_play=node.get("actionType") == "action",
             can_expand=browsable,
+            thumbnail=(
+                self.get_browse_image_url(MediaType.MUSIC, node_id)
+                if isinstance(node.get("artworkKey"), str) and node["artworkKey"]
+                else None
+            ),
         )
 
     @staticmethod

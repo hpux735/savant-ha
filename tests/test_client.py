@@ -299,6 +299,27 @@ def test_artwork_request_collects_jpeg():
     ]
 
 
+def test_browse_artwork_request_uses_the_captured_thumbnail_type():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+            client._handle_artwork_frame(_artwork_frame(b"\xff\xd8\xffjpeg\xff\xd9", final=True))
+
+        client.request = fake_request  # type: ignore[assignment]
+        return await client.async_get_artwork(
+            "Music", "Audio Zone 1", "thumbnail-key", artwork_type="thumbnailArtwork"
+        )
+
+    assert asyncio.run(run()) == b"\xff\xd8\xffjpeg\xff\xd9"
+    assert sent[0][1][0]["payload"] == {
+        "key": "thumbnail-key",
+        "type": "thumbnailArtwork",
+    }
+
+
 def test_default_music_subscriptions_include_both_observed_key_shapes():
     keys = build_default_subscribe_keys()
     assert "Music.Audio Zone 1.CurrentSongName" in keys

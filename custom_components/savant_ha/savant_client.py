@@ -688,7 +688,11 @@ class SavantClient:
             self._pending_scene_requests.pop(request_id, None)
 
     async def async_get_artwork(
-        self, component: str, logical_component: str, key: str
+        self,
+        component: str,
+        logical_component: str,
+        key: str,
+        artwork_type: str = "nowPlayingArtwork",
     ) -> bytes | None:
         """Fetch now-playing JPEG artwork (sibling PROTOCOL.md §8.2)."""
         if not key:
@@ -705,7 +709,7 @@ class SavantClient:
                     [
                         {
                             "URI": f"avc/{component}/{logical_component}",
-                            "payload": {"key": key, "type": "nowPlayingArtwork"},
+                            "payload": {"key": key, "type": artwork_type},
                         }
                     ],
                 )
