@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
 
@@ -18,6 +19,7 @@ from homeassistant.components.media_player import (
 from homeassistant.components.media_player.errors import BrowseError, SearchError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -50,6 +52,10 @@ _REMAINING = "CurrentRemainingTime"
 _SEEK_DISABLED = "SeekDisabled"
 _ARTWORK = "CurrentArtworkPath"
 _RAW_VOLUME_MAX = 50  # PROTOCOL.md §5.4 / sibling PROTOCOL.md §6.1, §7.2.
+_MUSIC_POWER_TIMEOUT = 5.0
+_NON_MEDIA_ROOT_TITLES = frozenset({"settings", "savant music", "select server"})
+
+
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     """A single archive-derived AV endpoint in one room."""
 
@@ -95,6 +101,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._optimistic_state: MediaPlayerState | None = None
         self._optimistic_volume: float | None = None
         self._browse_nodes: dict[str, dict[str, object]] = {}
+        self._music_active = asyncio.Event()
 
     def _key(self, attr: str) -> str:
         return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
@@ -110,6 +117,9 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         # optimistic PowerOff. Empty ActiveService is the host's authoritative idle state.
         if self._service_type == SVC_AV_SAVANTMUSIC and self._state(f"{self._room}.ActiveService"):
             self._power_off_requested = False
+            self._music_active.set()
+        elif self._service_type == SVC_AV_SAVANTMUSIC:
+            self._music_active.clear()
         position = self.media_position
         if position != self._last_media_position:
             self._last_media_position = position
@@ -366,6 +376,16 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node = self._browse_nodes.get(media_id)
         if node is None or node.get("actionType") != "action":
             return
+        if self._state(f"{self._room}.ActiveService"):
+            self._music_active.set()
+        if not self._music_active.is_set():
+            if VERB_POWER_ON not in self._requests:
+                raise HomeAssistantError("Savant Music cannot be turned on for playback")
+            await self.async_turn_on()
+            try:
+                await asyncio.wait_for(self._music_active.wait(), _MUSIC_POWER_TIMEOUT)
+            except TimeoutError as err:
+                raise HomeAssistantError("Savant Music did not turn on for playback") from err
         try:
             await self.hub.client.async_follow_music_node(
                 self._component, self._logical_component, node
@@ -376,7 +396,11 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     def _browse_result(self, result: dict[str, object], title: str) -> BrowseMedia:
         nodes = result.get("nodes")
         children = (
-            [self._browse_node(node) for node in nodes if isinstance(node, dict)]
+            [
+                self._browse_node(node)
+                for node in nodes
+                if isinstance(node, dict) and self._is_media_browse_node(node)
+            ]
             if isinstance(nodes, list)
             else []
         )
@@ -404,6 +428,14 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             can_play=node.get("actionType") == "action",
             can_expand=browsable,
         )
+
+    @staticmethod
+    def _is_media_browse_node(node: dict[str, object]) -> bool:
+        """Hide captured navigation/status entries that cannot select media."""
+        title = str(node.get("title") or "").strip().casefold()
+        if title in _NON_MEDIA_ROOT_TITLES or title.startswith("connected to"):
+            return False
+        return node.get("actionType") in {"browsable", "action"}
 
 
 def _discovered_zones(hub: SavantHub) -> set[int]:

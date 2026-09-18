@@ -269,6 +269,9 @@ new `requestId`. Search results are `displayType:"searchList"` nodes. Follow the
 `query:"browse"|"browseSearch"` on the matching endpoint; a recent-search track submitted
 to `/browse` produced matching `CurrentSongName`, `CurrentPauseStatus:false`, and elapsed-time
 state. Non-`all` filters and paging beyond `offset:0` remain unsupported.
+The captured track selection followed an earlier Music `PowerOn`; selecting a track while its
+zone is off is not verified. Wait for the room's nonempty `ActiveService` state after `PowerOn`
+before submitting the track node. Provider/browser-session expiry behavior is not captured.
 
 ### 5.4 Apple TV endpoints
 The current host's config archive declares `SVC_AV_APPLEREMOTEMEDIASERVER` and
