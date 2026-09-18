@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from homeassistant.components.media_player import (
+    BrowseMedia,
+    MediaClass,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    MediaType,
 )
+from homeassistant.components.media_player.errors import BrowseError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -87,6 +92,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._power_off_requested = False
         self._optimistic_state: MediaPlayerState | None = None
         self._optimistic_volume: float | None = None
+        self._browse_nodes: dict[str, dict[str, object]] = {}
 
     def _key(self, attr: str) -> str:
         return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
@@ -151,6 +157,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             features |= MediaPlayerEntityFeature.PREVIOUS_TRACK
         if VERB_SEEK in self._requests and self._value(_SEEK_DISABLED) is False:
             features |= MediaPlayerEntityFeature.SEEK
+        if self._service_type == SVC_AV_SAVANTMUSIC:
+            features |= MediaPlayerEntityFeature.BROWSE_MEDIA
         return features
 
     @property
@@ -296,6 +304,60 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             return
         progress = max(0, min(100, round(position / duration * 100)))
         await self._media_request(VERB_SEEK, {"ProgressValue": progress})
+
+    async def async_browse_media(
+        self,
+        media_content_type: MediaType | str | None = None,
+        media_content_id: str | None = None,
+    ) -> BrowseMedia:
+        """Return the capture-backed Savant Music folder tree (sibling PROTOCOL.md §8.3)."""
+        if self._service_type != SVC_AV_SAVANTMUSIC:
+            raise BrowseError("Savant media browsing is available only for Savant Music")
+        if media_content_id is None:
+            self._browse_nodes.clear()
+            result = await self.hub.client.async_browse_music(
+                self._component, self._logical_component, operation="getRoot"
+            )
+            return self._browse_result(result, "Savant Music")
+        node = self._browse_nodes.get(media_content_id)
+        if node is None:
+            raise BrowseError("Savant media item is no longer available; browse again")
+        result = await self.hub.client.async_browse_music(
+            self._component, self._logical_component, operation="browse", node=node
+        )
+        return self._browse_result(result, str(node.get("title") or "Savant Music"))
+
+    def _browse_result(self, result: dict[str, object], title: str) -> BrowseMedia:
+        nodes = result.get("nodes")
+        children = (
+            [self._browse_node(node) for node in nodes if isinstance(node, dict)]
+            if isinstance(nodes, list)
+            else []
+        )
+        return BrowseMedia(
+            media_class=MediaClass.DIRECTORY,
+            media_content_id="root",
+            media_content_type=MediaType.MUSIC,
+            title=title,
+            can_play=False,
+            can_expand=True,
+            children=children,
+        )
+
+    def _browse_node(self, node: dict[str, object]) -> BrowseMedia:
+        """Translate one opaque Savant UI node without exposing its provider metadata."""
+        node_id = uuid.uuid4().hex
+        self._browse_nodes[node_id] = node
+        browsable = node.get("actionType") == "browsable"
+        title = str(node.get("title") or node.get("subtitle") or "Savant Music")
+        return BrowseMedia(
+            media_class=MediaClass.DIRECTORY,
+            media_content_id=node_id,
+            media_content_type=MediaType.MUSIC,
+            title=title,
+            can_play=False,
+            can_expand=browsable,
+        )
 
 
 def _discovered_zones(hub: SavantHub) -> set[int]:

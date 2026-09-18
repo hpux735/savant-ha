@@ -87,6 +87,7 @@ _MdnsHostsCallback = Callable[[], Awaitable[list[str]]]
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
 ARTWORK_TIMEOUT = 10.0
+MUSIC_BROWSE_TIMEOUT = 10.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
 _JPEG_SOI = b"\xff\xd8\xff"
 _JPEG_EOI = b"\xff\xd9"
@@ -502,6 +503,9 @@ class SavantClient:
         self._artwork_image: bytes | None = None
         self._artwork_future: asyncio.Future[bytes | None] | None = None
         self._pending_scene_requests: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._pending_music_requests: dict[
+            tuple[str, str], asyncio.Future[dict[str, Any]]
+        ] = {}
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
@@ -696,6 +700,38 @@ class SavantClient:
                     self._artwork_bytes = bytearray()
                     self._artwork_image = None
 
+    async def async_browse_music(
+        self,
+        component: str,
+        logical_component: str,
+        *,
+        operation: str,
+        node: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Request an observed Savant Music root or folder listing (sibling PROTOCOL.md §8)."""
+        if operation not in {"getRoot", "browse"}:
+            raise ValueError(f"Unsupported Savant music operation: {operation}")
+        request_id = uuid.uuid4().hex
+        uri = f"music/{component}/{logical_component}/SVC_AV_SAVANTMUSIC/{operation}"
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._pending_music_requests[(uri, request_id)] = future
+        message: dict[str, Any] = {
+            "clientType": "iPhone",
+            "limit": 50,
+            "offset": 0,
+            "requestId": request_id,
+            "version": 1,
+            "node": node,
+            "arguments": None,
+        }
+        try:
+            await self.request(uri, [message])
+            return await asyncio.wait_for(future, MUSIC_BROWSE_TIMEOUT)
+        except TimeoutError as err:
+            raise SavantError("Savant music browse timed out") from err
+        finally:
+            self._pending_music_requests.pop((uri, request_id), None)
+
     # ------------------------------------------------------------------ internals
 
     def _ssl_context(self) -> ssl.SSLContext:
@@ -888,6 +924,10 @@ class SavantClient:
             if not future.done():
                 future.set_exception(SavantConnectionError("connection lost"))
         self._pending_scene_requests.clear()
+        for future in self._pending_music_requests.values():
+            if not future.done():
+                future.set_exception(SavantConnectionError("connection lost"))
+        self._pending_music_requests.clear()
         if self._auth_task is not None:
             self._auth_task.cancel()
             # CancelledError is a BaseException — suppress it explicitly too.
@@ -990,6 +1030,8 @@ class SavantClient:
                 scenes = scene_summaries_from_messages(messages)
                 if scenes is not None and self.on_scenes_update is not None:
                     self.on_scenes_update(scenes)
+        elif uri.startswith("music/"):
+            self._handle_music_response(uri, messages)
         else:
             LOGGER.debug("Unhandled Savant URI %r", uri)
 
@@ -1060,6 +1102,18 @@ class SavantClient:
             if not isinstance(request_id, str):
                 continue
             future = self._pending_scene_requests.get(request_id)
+            if future is not None and not future.done():
+                future.set_result(message)
+
+    def _handle_music_response(self, uri: str, messages: list[Any]) -> None:
+        """Resolve a correlated Music RPC response on its request URI (PROTOCOL.md §8)."""
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            request_id = message.get("requestId")
+            if not isinstance(request_id, str):
+                continue
+            future = self._pending_music_requests.get((uri, request_id))
             if future is not None and not future.done():
                 future.set_result(message)
 

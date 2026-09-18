@@ -254,6 +254,16 @@ single offset. Trace-backed music controls are `PowerOn`, `PowerOff`, `SetVolume
 After `PowerOff`, the host can retain all metadata, pause, and progress values; use the
 room's explicit `ActiveService:""` state as the authoritative off signal instead.
 
+Music browsing is a same-URI RPC under
+`music/<component>/<logical>/SVC_AV_SAVANTMUSIC/getRoot` and `/browse`. Captured requests
+use `{clientType:"iPhone",limit:50,offset:0,requestId,version:1,node,arguments:null}`;
+the response carries `{requestId,screenArguments,nodes}` on the same URI. For `/browse`,
+preserve the selected node's opaque routing fields, especially its JSON-encoded
+`arguments.item`, rather than deriving a request from its title. Nodes with
+`actionType:"browsable"` are folders; action-node playback effects are not verified.
+The observed `/search` request opens search metadata and recent items but does not contain a
+typed query, so text search, paging beyond `offset:0`, and result playback remain unsupported.
+
 ### 5.4 Apple TV endpoints
 The current host's config archive declares `SVC_AV_APPLEREMOTEMEDIASERVER` and
 `SVC_AV_APPLEREMOTEMEDIASERVERAUDIO` endpoints for Apple TV. Their archive request maps
@@ -343,8 +353,8 @@ HVAC scope is archive-derived: `component`/`logicalComponent` come from the enti
    `service/request`, not yet captured). Shade control is documented in the sibling
    `PROTOCOL.md` §6.1.1 and §7.5: `ShadeLevel` is 0 (closed) through 100 (open),
    `ShadeSet` updates may be asynchronous and controller positions may quantize by ±1.
-4. Music browse/search returns generic UI nodes, but the capture does not establish an
-   action to select a result for playback.
+4. Music action-node playback, text-search submission, and page traversal beyond
+   `limit:50, offset:0` remain unverified.
 5. ~~`state/update` delta vs snapshot semantics~~ — RESOLVED: registration returns an
    immediate per-key snapshot (empty-string value when idle), then delta-only pushes
    on change (§5.2; sibling PROTOCOL.md §6.6).

@@ -664,5 +664,74 @@ def test_activate_scene_sends_observed_request_and_waits_for_response():
     assert message["requestArgs"] == {"id": "scene-1", "version": SCENE_VERSION}
 
 
+def test_browse_music_sends_observed_request_and_waits_for_same_uri_response():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]]]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(
+            client.async_browse_music("Music", "Audio Zone 1", operation="getRoot")
+        )
+        await asyncio.sleep(0)
+        uri, messages = sent[0]
+        request_id = messages[0]["requestId"]
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": uri,
+                    "messages": [
+                        {
+                            "requestId": request_id,
+                            "screenArguments": {},
+                            "nodes": [{"title": "Playlists", "actionType": "browsable"}],
+                        }
+                    ],
+                }
+            )
+        )
+        return await task
+
+    result = asyncio.run(run())
+    assert sent[0][0] == "music/Music/Audio Zone 1/SVC_AV_SAVANTMUSIC/getRoot"
+    assert {**sent[0][1][0], "requestId": "ignored"} == {
+        "clientType": "iPhone",
+        "limit": 50,
+        "offset": 0,
+        "requestId": "ignored",
+        "version": 1,
+        "node": None,
+        "arguments": None,
+    }
+    assert result["nodes"] == [{"title": "Playlists", "actionType": "browsable"}]
+
+
+def test_browse_music_preserves_the_selected_opaque_node():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]]]] = []
+    node = {"actionType": "browsable", "browseQuery": "opaque", "title": "Plex"}
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(
+            client.async_browse_music("Music", "Audio Zone 1", operation="browse", node=node)
+        )
+        await asyncio.sleep(0)
+        uri, messages = sent[0]
+        client._handle_frame(
+            _frame({"URI": uri, "messages": [{"requestId": messages[0]["requestId"], "nodes": []}]})
+        )
+        await task
+
+    asyncio.run(run())
+    assert sent[0][1][0]["node"] is node
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
