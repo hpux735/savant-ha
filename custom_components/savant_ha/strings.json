@@ -23,6 +23,14 @@
           "devices": "Devices to import"
         }
       },
+      "coolmaster": {
+        "title": "CoolMasterNet devices found",
+        "description": "This Savant configuration includes CoolMasterNet climate devices. If Home Assistant can reach CoolMasterNet directly, install the built-in CoolMasterNet integration first; retrying Savant setup will exclude exact duplicate climate devices.",
+        "menu_options": {
+          "install_coolmaster": "Cancel and install CoolMasterNet first",
+          "continue_without_coolmaster": "Continue with Savant only"
+        }
+      },
       "reconfigure": {
         "title": "Refresh Savant devices",
         "description": "Log in to download the current device and media-source inventory from {host}.",
@@ -51,7 +59,8 @@
       "already_configured": "This host is already configured.",
       "discovery_failed": "Could not discover a Savant host with a stable UID. Confirm Home Assistant is on the same network as the host.",
       "reconfigure_failed": "The reconfiguration session was not initialized.",
-      "reconfigure_successful": "Savant device inventory refreshed."
+      "reconfigure_successful": "Savant device inventory refreshed.",
+      "coolmaster_setup_recommended": "Set up the built-in CoolMasterNet integration, then retry Savant setup."
     }
   },
   "options": {

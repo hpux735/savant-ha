@@ -22,7 +22,7 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
+from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 
 from .const import (
     CONF_CLOUD_TOKEN,
@@ -39,6 +39,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .coolmaster import exclude_duplicate_coolmaster_devices, is_coolmaster_climate
 from .savant_client import (
     SavantDeviceInfo,
     SavantHostInfo,
@@ -72,6 +73,8 @@ _OPTIONS_SCHEMA = vol.Schema(
         ),
     }
 )
+
+_COOLMASTER_DOMAIN = "coolmaster"
 
 
 def _parse_rooms(raw: Any) -> list[str]:
@@ -228,6 +231,15 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 self._devices = _devices_from_info(probe)
+                if self._coolmaster_entries():
+                    self._devices = exclude_duplicate_coolmaster_devices(
+                        self._devices, self._coolmaster_climate_names()
+                    )
+                elif any(is_coolmaster_climate(device) for device in self._devices):
+                    return self.async_show_menu(
+                        step_id="coolmaster",
+                        menu_options=["install_coolmaster", "continue_without_coolmaster"],
+                    )
                 if not self._devices:
                     errors["base"] = "no_devices"
                 else:
@@ -245,6 +257,22 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=_LOGIN_SCHEMA,
             errors=errors,
             description_placeholders={"host": self._host, "name": self._name or self._host},
+        )
+
+    async def async_step_install_coolmaster(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Stop setup so the installer can configure direct CoolMasterNet access."""
+        return self.async_abort(reason="coolmaster_setup_recommended")
+
+    async def async_step_continue_without_coolmaster(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Continue with the Savant device picker when direct access is unavailable."""
+        return self.async_show_form(
+            step_id="devices",
+            data_schema=_devices_schema(self._devices),
+            description_placeholders={"count": str(len(self._devices)), "host": self._host},
         )
 
     async def async_step_devices(
@@ -310,6 +338,10 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 self._devices = _devices_from_info(probe)
+                if self._coolmaster_entries():
+                    self._devices = exclude_duplicate_coolmaster_devices(
+                        self._devices, self._coolmaster_climate_names()
+                    )
                 if self._devices:
                     return self.async_show_form(
                         step_id="reconfigure_devices",
@@ -357,6 +389,28 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception:  # noqa: BLE001 - discovery is best-effort
             LOGGER.exception("Savant discovery failed for %s", host)
             return None
+
+    def _coolmaster_entries(self) -> list[ConfigEntry]:
+        """Return enabled built-in CoolMasterNet config entries."""
+        return [
+            entry
+            for entry in self.hass.config_entries.async_entries(_COOLMASTER_DOMAIN)
+            if entry.disabled_by is None
+        ]
+
+    def _coolmaster_climate_names(self) -> set[str]:
+        """Collect names of climates currently provided by CoolMasterNet."""
+        entity_registry = er.async_get(self.hass)
+        device_registry = dr.async_get(self.hass)
+        names: set[str] = set()
+        for entry in self._coolmaster_entries():
+            for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+                if not entity.entity_id.startswith("climate."):
+                    continue
+                names.update(name for name in (entity.name, entity.original_name) if name)
+                if entity.device_id and (device := device_registry.async_get(entity.device_id)):
+                    names.update(name for name in (device.name, device.name_by_user) if name)
+        return names
 
     async def _async_select_host(self, info: SavantHostInfo) -> None:
         """Persist the discovery identity in flow state before collecting credentials."""
