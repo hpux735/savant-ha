@@ -172,6 +172,9 @@ Some CoolMaster Net controllers use two archive-derived state-key address suffix
 `ThermostatCurrentTemperature_<address1>_<address2>`; retain the second token and its
 zero padding. Captured values can include a unit suffix such as `"67F"`. No CoolMaster
 control request has been captured, so its setter payload must not be inferred.
+Later capture evidence adds per-unit `ThermostatCurrentSetPoint`, `ThermostatMode`,
+`ThermostatFanMode`, and HVAC/fan mode flags with the same suffix. These are read-only
+state observations, not evidence for setter payloads.
 
 ### 5.2 Rooms — `<Room>.*` (+ how to derive the room list)
 

@@ -106,7 +106,7 @@ class SavantClimate(SavantEntity, ClimateEntity):
         ) = climate_identity(device.get("state_name", ""), suffix)
         self._is_coolmaster = self._suffix.count("_") >= 2
         if self._is_coolmaster:
-            # Only CoolMaster temperature state is captured; its control payload is unknown.
+            # CoolMaster state is captured, but its multi-address control payload is unknown.
             self._attr_hvac_modes = []
             self._attr_supported_features = ClimateEntityFeature(0)
         self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
@@ -153,6 +153,8 @@ class SavantClimate(SavantEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
+        if self._is_coolmaster:
+            return self._num(_SET_POINT_ATTR)
         if self.hvac_mode == HVACMode.AUTO:
             return None
         if self.hvac_mode == HVACMode.COOL:
@@ -172,6 +174,8 @@ class SavantClimate(SavantEntity, ClimateEntity):
     @property
     def fan_mode(self) -> str | None:
         value = self._state(self._key("ThermostatFanMode"))
+        if self._is_coolmaster and isinstance(value, str) and value:
+            return value.lower()
         if isinstance(value, str) and value.lower() in _FAN_MODE_VERBS:
             return value.lower()
         for mode, flag in (
