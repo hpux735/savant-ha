@@ -192,6 +192,8 @@ def test_post_auth_matches_observed_state_startup_order():
     async def run():
         async def fake_request(uri, messages):
             sent.append((uri, messages))
+            if uri == "session/fileDownload":
+                client._handle_archive_frame(_artwork_frame(b"archive", final=True))
 
         client.request = fake_request  # type: ignore[assignment]
         await client._post_auth()
@@ -324,6 +326,8 @@ def test_default_music_subscriptions_include_both_observed_key_shapes():
     keys = build_default_subscribe_keys()
     assert "Music.Audio Zone 1.CurrentSongName" in keys
     assert "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" in keys
+    assert "Music.Audio Zone 1.refreshLMQ3" in keys
+    assert "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.refreshLMQ3" in keys
 
 
 def test_local_login_uses_user_password_form():
@@ -443,6 +447,37 @@ def test_device_recognized_sets_authentication_flag():
     )
     assert client._device_recognized is True
     assert client._authentication_required is True
+
+
+def test_device_recognized_without_authentication_marks_session_authorized():
+    client = SavantClient("10.0.0.5", 12345)
+    client._handle_frame(
+        _frame(
+            {
+                ENVELOPE_KEY_URI: "session/deviceRecognized",
+                ENVELOPE_KEY_MESSAGES: [{"authentication": False}],
+            }
+        )
+    )
+    assert client.authorized is True
+
+
+def test_auth_denial_does_not_run_post_auth_requests():
+    client = SavantClient("10.0.0.5", 12345, username="bob", password="bad")
+    client._device_recognized = True
+    client._auth_response_seen = True
+    client._authorized = False
+    sent: list[tuple[str, list]] = []
+
+    async def run():
+        async def fake_request(uri, messages):
+            sent.append((uri, messages))
+
+        client.request = fake_request  # type: ignore[assignment]
+        await client._run_auth_flow()
+
+    asyncio.run(run())
+    assert sent == [("session/authenticationRequest", [{"user": "bob", "password": "bad"}])]
 
 
 def test_auth_denied_marks_seen_but_not_authorized():
@@ -601,6 +636,24 @@ def test_probe_host_captures_authorized_before_disconnect(monkeypatch):
     assert info.auth_response_seen is True
 
 
+def test_probe_host_disconnects_when_connect_fails(monkeypatch):
+    disconnected = False
+
+    async def fake_connect(self):
+        raise OSError("connect failed")
+
+    async def fake_disconnect(self):
+        nonlocal disconnected
+        disconnected = True
+
+    monkeypatch.setattr(sc.SavantClient, "_connect", fake_connect)
+    monkeypatch.setattr(sc.SavantClient, "_disconnect", fake_disconnect)
+
+    with pytest.raises(OSError, match="connect failed"):
+        asyncio.run(probe_host("10.0.0.5", 12345, timeout=0.05))
+    assert disconnected is True
+
+
 def test_scene_summaries_extracts_an_authoritative_dashboard_list():
     messages = [
         {
@@ -751,6 +804,29 @@ def test_browse_music_preserves_the_selected_opaque_node():
         await task
 
     asyncio.run(run())
+    assert sent[0][1][0]["node"] is node
+
+
+def test_follow_music_node_without_query_uses_browse_endpoint():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]], bool]] = []
+    node = {"actionType": "browsable", "browseQuery": "opaque", "title": "Playlists"}
+
+    async def run():
+        async def fake_request(uri, messages, *, include_identity):
+            sent.append((uri, messages, include_identity))
+
+        client._request_music = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(client.async_follow_music_node("Music", "Audio Zone 1", node))
+        await asyncio.sleep(0)
+        uri, messages, _ = sent[0]
+        client._handle_frame(
+            _frame({"URI": uri, "messages": [{"requestId": messages[0]["requestId"], "nodes": []}]})
+        )
+        await task
+
+    asyncio.run(run())
+    assert sent[0][0].endswith("/browse")
     assert sent[0][1][0]["node"] is node
 
 

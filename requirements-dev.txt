@@ -1,5 +1,6 @@
 # Dev/test dependencies (integration itself declares its own runtime needs in
 # custom_components/savant_ha/manifest.json).
 msgpack>=1.0.0
+aiohttp>=3.10
 pytest>=8.0
 ruff>=0.6

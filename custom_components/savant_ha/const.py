@@ -272,6 +272,7 @@ MUSIC_ZONE_ATTRIBUTES = (
     "CurrentProgress",
     "CurrentTransportActions",
     "refreshLMQ",
+    "refreshLMQ3",
     "TransportSet",
     "SeekDisabled",
     "SongLiked",

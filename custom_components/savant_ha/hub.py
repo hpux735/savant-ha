@@ -176,7 +176,7 @@ class SavantHub:
         if not new_rooms:
             return
         self.rooms |= new_rooms
-        LOGGER.info("Savant discovered %d new room(s): %s", len(new_rooms), sorted(new_rooms))
+        LOGGER.info("Savant discovered %d new room(s)", len(new_rooms))
         # Subscribe to each new room's per-room state keys.
         self.hass.loop.create_task(self.client.register_state_keys(room_state_keys(new_rooms)))
         self._schedule_flush()

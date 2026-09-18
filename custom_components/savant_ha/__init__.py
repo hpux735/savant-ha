@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 
 from .const import CONF_UID, DOMAIN, new_uid
 from .hub import SavantHub
@@ -53,8 +53,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    async def _async_stop(_event: Event) -> None:
+        await hub.stop()
+
     entry.async_on_unload(
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, hub.stop)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop)
     )
     # Re-read the advanced options (credentials/rooms) when they change.
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

@@ -37,15 +37,15 @@ class SavantEntity(CoordinatorEntity[SavantCoordinator], Entity):
 
     @property
     def available(self) -> bool:
-        # Reflect the live connection, not just the last coordinator update.
-        return self.hub.client.connected
+        # A transport connection is not usable until authentication completes.
+        return super().available and self.hub.client.authorized
 
     @property
     def device_info(self) -> DeviceInfo:
         identifiers = {(DOMAIN, self.hub.entry.entry_id)}
         name = self.hub.entry.title
         if self._device_key:
-            identifiers = {(DOMAIN, self.hub.entry.entry_id, self._device_key)}
+            identifiers = {(DOMAIN, f"{self.hub.entry.entry_id}:{self._device_key}")}
             name = self._device_name or name
         info = DeviceInfo(
             identifiers=identifiers,

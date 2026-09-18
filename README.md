@@ -62,7 +62,7 @@ extra room names) live behind the integration's **Configure** button.
 | Climate | `HVACEntities` | mode (Off/Heat/Cool/Auto), heat/cool setpoints, current temp/humidity |
 | Cover | `ShadeEntities` / `GarageEntities` | shade open/close/stop and position |
 | Fan | `FanEntities` | on/off (read-only for now) |
-| Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: now-playing, power, volume, transport, album art; Apple TV: archive-declared power, volume, and play/pause |
+| Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: browsing/search, playback, now-playing, power, volume, transport, and album art; Apple TV: archive-declared power, volume, and play/pause |
 | Scene | Savant dashboard `scenesAndFoldersReduced` updates | standalone native `scene.turn_on` activation |
 
 ## Limitations / open questions
@@ -73,11 +73,11 @@ These are inherited from the sibling protocol document — see `PROTOCOL.md` §7
   integration ignores it.
 - **Light colour** needs the per-load `CurrentColor_N_<addr>` state + the `bleColor`
   `DimmerSet` args; only brightness/on-off are wired so far.
-- **Shades / fans / door-locks** have observed state keys but no captured set-verbs, so
-  their entities are read-only for now.
-- **Media library browsing** remains unavailable: browse/search has no captured action
-  that selects a result for playback. Mute/repeat are one-way (`MuteOn`/`RepeatOn`) and
-  are therefore not advertised as HA controls.
+- **Fans / door-locks** have observed state keys but no captured set-verbs, so their
+  entities are read-only for now. Shade positioning is available for capture-backed backends.
+- Music mute/repeat remain one-way (`MuteOn`/`RepeatOn`) and are therefore not advertised
+  as Home Assistant controls. Search filters and pagination beyond the captured defaults
+  are not exposed.
 
 Temperature is assumed Fahrenheit (matching the observed `SchedulerSettings` scale).
 

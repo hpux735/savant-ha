@@ -43,9 +43,7 @@ from .const import (
     DEVICE_OS,
     DEVICE_TYPE,
     DISCOVERY_PORT_CONTROL,
-    DISCOVERY_PORT_PRESENCE,
     DISCOVERY_SERVICE_CONTROL,
-    DISCOVERY_SERVICE_PRESENCE,
     ENVELOPE_KEY_MESSAGES,
     ENVELOPE_KEY_UID,
     ENVELOPE_KEY_URI,
@@ -87,6 +85,7 @@ _MdnsHostsCallback = Callable[[], Awaitable[list[str]]]
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
 ARTWORK_TIMEOUT = 10.0
+FILE_TRANSFER_TIMEOUT = 15.0
 MUSIC_BROWSE_TIMEOUT = 10.0
 MUSIC_SEARCH_READY_TIMEOUT = 5.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
@@ -281,17 +280,19 @@ async def probe_host(
 
     client.on_rooms_discovered = _on_rooms
     client.on_state_update = _on_state
-    LOGGER.info("Savant probe: connecting to %s:%s to collect devices", host, port)
-    await client._connect()
-    receive = asyncio.ensure_future(client._receive_loop())
+    LOGGER.info("Savant probe: connecting to collect devices")
+    receive: asyncio.Task[None] | None = None
     try:
+        await client._connect()
+        receive = asyncio.ensure_future(client._receive_loop())
         await asyncio.sleep(timeout)
     finally:
-        receive.cancel()
-        # NOTE: asyncio.CancelledError is a BaseException (not Exception), so it must
-        # be suppressed explicitly or it escapes and crashes the config flow.
-        with suppress(asyncio.CancelledError, Exception):
-            await receive
+        if receive is not None:
+            receive.cancel()
+            # NOTE: asyncio.CancelledError is a BaseException (not Exception), so it must
+            # be suppressed explicitly or it escapes and crashes the config flow.
+            with suppress(asyncio.CancelledError, Exception):
+                await receive
         # Capture the auth state BEFORE _disconnect() resets _authorized.
         info.authorized = client.authorized
         info.auth_response_seen = client.auth_response_seen
@@ -363,15 +364,12 @@ async def discover_hosts(
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.bind(("0.0.0.0", 0))
     transport, _ = await loop.create_datagram_endpoint(lambda: proto, sock=sock)
-    targets = [
-        ("255.255.255.255", DISCOVERY_PORT_CONTROL, DISCOVERY_SERVICE_CONTROL),
-        ("255.255.255.255", DISCOVERY_PORT_PRESENCE, DISCOVERY_SERVICE_PRESENCE),
-    ]
+    # Only the 9101 control record carries the authoritative WSS endpoint.
+    targets = [("255.255.255.255", DISCOVERY_PORT_CONTROL, DISCOVERY_SERVICE_CONTROL)]
     if host:
         targets.extend(
             [
                 (host, DISCOVERY_PORT_CONTROL, DISCOVERY_SERVICE_CONTROL),
-                (host, DISCOVERY_PORT_PRESENCE, DISCOVERY_SERVICE_PRESENCE),
             ]
         )
     try:
@@ -384,17 +382,9 @@ async def discover_hosts(
     finally:
         transport.close()
 
-    LOGGER.debug(
-        "Savant discovery: %d raw reply(ies) for %s: %s",
-        len(proto.results),
-        host,
-        {
-            addr: {k: v for k, v in record.items() if k not in _REDACT_KEYS}
-            for addr, record in proto.results
-        },
-    )
+    LOGGER.debug("Savant discovery: %d control reply(ies)", len(proto.results))
     if not proto.results:
-        LOGGER.debug("Savant discovery: no reply on UDP 9101/9103 for %s", host or "broadcast")
+        LOGGER.debug("Savant discovery: no reply on UDP 9101 for %s", host or "broadcast")
     def _record_port(record: dict[str, Any]) -> int:
         try:
             return int(record.get("port", 0))
@@ -500,6 +490,7 @@ class SavantClient:
         # Artwork transfers are raw binary frames with no request correlation. Serialize
         # them and locate JPEG markers instead of assuming the variable host prefix.
         self._artwork_lock = asyncio.Lock()
+        self._archive_future: asyncio.Future[bytes | None] | None = None
         self._artwork_bytes = bytearray()
         self._artwork_image: bytes | None = None
         self._artwork_future: asyncio.Future[bytes | None] | None = None
@@ -616,7 +607,7 @@ class SavantClient:
             ENVELOPE_KEY_UID: self._uid,
             ENVELOPE_KEY_USER: DEVICE_TYPE,
         }
-        LOGGER.debug("Savant -> %s %s", uri, _redact(messages))
+        LOGGER.debug("Savant -> %s (%d message(s))", uri, len(messages))
         await self._ws.send_bytes(_pack(envelope))
 
     async def _request_music(
@@ -792,7 +783,7 @@ class SavantClient:
         self, component: str, logical_component: str, node: dict[str, Any]
     ) -> dict[str, Any]:
         """Follow a captured typed-search result node (sibling PROTOCOL.md §8.4-8.5)."""
-        operation = node.get("query")
+        operation = node.get("query") or "browse"
         if operation not in {"browse", "browseSearch"}:
             raise ValueError("Unsupported Savant Music result node")
         return await self._async_music_request(
@@ -938,6 +929,7 @@ class SavantClient:
                 LOGGER.warning(
                     "Savant: host did not answer devicePresent (no deviceRecognized)"
                 )
+                return
             if self._authentication_required:
                 await self._send_auth_request()
                 deadline = time.monotonic() + AUTH_TIMEOUT
@@ -945,6 +937,9 @@ class SavantClient:
                     await asyncio.sleep(0.1)
                 if not self._auth_response_seen:
                     LOGGER.warning("Savant: host did not answer authenticationRequest")
+                    return
+                if not self._authorized:
+                    return
             await self._post_auth()
         except (SavantError, aiohttp.ClientError, OSError, TimeoutError):
             pass
@@ -952,10 +947,20 @@ class SavantClient:
     async def _request_uiconfig(self) -> None:
         # Download the authoritative config archive (PROTOCOL.md §13).  The response is
         # streamed as framed binary frames, reassembled by _handle_frame.
-        self._uiconfig_frames = []
-        self._uiconfig_archive = None
-        await self.request(URI_FILE_DOWNLOAD, [{"filePath": "uiconfig.tar.gz"}])
-        LOGGER.debug("Savant -> requested uiconfig.tar.gz")
+        async with self._artwork_lock:
+            self._uiconfig_frames = []
+            self._uiconfig_archive = None
+            future: asyncio.Future[bytes | None] = asyncio.get_running_loop().create_future()
+            self._archive_future = future
+            try:
+                await self.request(URI_FILE_DOWNLOAD, [{"filePath": "uiconfig.tar.gz"}])
+                LOGGER.debug("Savant -> requested uiconfig.tar.gz")
+                await asyncio.wait_for(future, FILE_TRANSFER_TIMEOUT)
+            except TimeoutError:
+                LOGGER.warning("Savant config archive download timed out")
+            finally:
+                if self._archive_future is future:
+                    self._archive_future = None
 
     async def _post_auth(self) -> None:
         if self._post_auth_done:
@@ -1026,6 +1031,8 @@ class SavantClient:
         self._authorized = False
         if self._artwork_future is not None and not self._artwork_future.done():
             self._artwork_future.set_result(None)
+        if self._archive_future is not None and not self._archive_future.done():
+            self._archive_future.set_result(None)
         for future in self._pending_scene_requests.values():
             if not future.done():
                 future.set_exception(SavantConnectionError("connection lost"))
@@ -1067,9 +1074,7 @@ class SavantClient:
                     except Exception:  # noqa: BLE001 - never die on a bad frame
                         LOGGER.exception("Failed to decode Savant frame")
                 elif msg.type is WSMsgType.TEXT:
-                    # Unexpected — the protocol uses binary frames.  Log it (truncated,
-                    # redacted) so we can see if the host is sending something odd.
-                    LOGGER.warning("Savant <- unexpected TEXT frame: %r", msg.data[:200])
+                    LOGGER.warning("Savant <- unexpected TEXT frame (%d bytes)", len(msg.data))
                 elif msg.type is WSMsgType.PING:
                     LOGGER.debug("Savant <- WS ping")
                 elif msg.type is WSMsgType.PONG:
@@ -1098,9 +1103,7 @@ class SavantClient:
             await self._ws.ping(KEEPALIVE_BYTE)
 
     def _handle_frame(self, data: bytes) -> None:
-        if self._artwork_future is not None and not self._artwork_future.done() and (
-            self._artwork_bytes or _JPEG_SOI in data
-        ):
+        if self._artwork_future is not None and not self._artwork_future.done():
             self._handle_artwork_frame(data)
             return
         # The config archive is streamed as framed binary frames (not msgpack) — the
@@ -1117,7 +1120,7 @@ class SavantClient:
             return
         uri = obj.get(ENVELOPE_KEY_URI, "")
         messages = obj.get(ENVELOPE_KEY_MESSAGES, []) or []
-        LOGGER.debug("Savant <- %s %s", uri, _redact(messages))
+        LOGGER.debug("Savant <- %s (%d message(s))", uri, len(messages))
 
         if uri == URI_STATE_UPDATE:
             for message in messages:
@@ -1173,11 +1176,15 @@ class SavantClient:
         # byte 1 = 0x81 marks the final frame (PROTOCOL.md §13).
         if data[1] == 0x81:
             self._uiconfig_archive = uiconfig.reassemble_archive(self._uiconfig_frames)
+            frame_count = len(self._uiconfig_frames)
+            self._uiconfig_frames.clear()
             LOGGER.info(
                 "Savant uiconfig downloaded: %d frame(s), %d bytes",
-                len(self._uiconfig_frames),
+                frame_count,
                 len(self._uiconfig_archive),
             )
+            if self._archive_future is not None and not self._archive_future.done():
+                self._archive_future.set_result(self._uiconfig_archive)
 
     def _handle_device_recognized(self, messages: list[Any]) -> None:
         # Host's answer to devicePresent (PROTOCOL.md §4.0): carries the
@@ -1185,6 +1192,8 @@ class SavantClient:
         self._device_recognized = True
         first = messages[0] if messages and isinstance(messages[0], dict) else {}
         self._authentication_required = bool(first.get("authentication", True))
+        if not self._authentication_required:
+            self._authorized = True
         LOGGER.info(
             "Savant deviceRecognized (authentication=%s)",
             self._authentication_required,

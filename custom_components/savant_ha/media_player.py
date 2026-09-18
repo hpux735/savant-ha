@@ -116,7 +116,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     def _handle_coordinator_update(self) -> None:
         # A nonempty room service confirms a later external/native power-on after an
         # optimistic PowerOff. Empty ActiveService is the host's authoritative idle state.
-        if self._service_type == SVC_AV_SAVANTMUSIC and self._state(f"{self._room}.ActiveService"):
+        active_service = str(self._state(f"{self._room}.ActiveService") or "")
+        if self._service_type == SVC_AV_SAVANTMUSIC and self._is_active_service(active_service):
             self._power_off_requested = False
             self._music_active.set()
         elif self._service_type == SVC_AV_SAVANTMUSIC:
@@ -341,9 +342,14 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if node is None:
             raise BrowseError("Savant media item is no longer available; browse again")
         try:
-            result = await self.hub.client.async_follow_music_node(
-                self._component, self._logical_component, node
-            )
+            if node.get("query") in {"browse", "browseSearch"}:
+                result = await self.hub.client.async_follow_music_node(
+                    self._component, self._logical_component, node
+                )
+            else:
+                result = await self.hub.client.async_browse_music(
+                    self._component, self._logical_component, operation="browse", node=node
+                )
         except ValueError as err:
             raise BrowseError("Savant media item cannot be opened") from err
         return self._browse_result(result, str(node.get("title") or "Savant Music"))
@@ -378,7 +384,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node = self._browse_nodes.get(media_id)
         if node is None or node.get("actionType") != "action":
             return
-        if self._state(f"{self._room}.ActiveService"):
+        if self._is_active_service(str(self._state(f"{self._room}.ActiveService") or "")):
             self._music_active.set()
         if not self._music_active.is_set():
             if VERB_POWER_ON not in self._requests:
@@ -468,6 +474,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if title in _NON_MEDIA_ROOT_TITLES or title.startswith("connected to"):
             return False
         return node.get("actionType") in {"browsable", "action"}
+
+    def _is_active_service(self, active_service: str) -> bool:
+        """Return whether the room's active service is this Music endpoint."""
+        return active_service == self._service_id if self._service_id else bool(active_service)
 
 
 def _discovered_zones(hub: SavantHub) -> set[int]:

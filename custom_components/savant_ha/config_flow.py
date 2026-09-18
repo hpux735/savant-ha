@@ -21,8 +21,11 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import selector
 
 from .const import (
     CONF_CLOUD_TOKEN,
@@ -57,16 +60,24 @@ _USER_SCHEMA = vol.Schema(
 _LOGIN_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
+        vol.Required(CONF_PASSWORD): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
     }
 )
 
 _OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_USERNAME): str,
-        vol.Optional(CONF_PASSWORD): str,
-        vol.Optional(CONF_HOST_TOKEN): str,
-        vol.Optional(CONF_CLOUD_TOKEN): str,
+        vol.Optional(CONF_PASSWORD): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
+        vol.Optional(CONF_HOST_TOKEN): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
+        vol.Optional(CONF_CLOUD_TOKEN): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
         vol.Optional(CONF_CONFIGURATION_ID): str,
         vol.Optional(CONF_ROOMS): selector.TextSelector(
             selector.TextSelectorConfig(multiline=True)
@@ -149,6 +160,11 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Host discovery -> login -> device picker."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return SavantOptionsFlow()
 
     def __init__(self) -> None:
         self._host: str = ""
@@ -440,26 +456,39 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class SavantOptionsFlow(OptionsFlow):
     """Advanced, optional settings — reached via the Configure button."""
 
-    def __init__(self, entry: ConfigEntry) -> None:
-        self._entry = entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         if user_input is not None:
+            options = dict(self.config_entry.options)
+            for key in (CONF_USERNAME, CONF_CONFIGURATION_ID):
+                if value := user_input.get(key):
+                    options[key] = value
+                else:
+                    options.pop(key, None)
+            # Blank secret fields preserve the stored value without exposing it to
+            # the frontend. Entering a value explicitly replaces it.
+            for key in (CONF_PASSWORD, CONF_HOST_TOKEN, CONF_CLOUD_TOKEN):
+                if value := user_input.get(key):
+                    options[key] = value
+            if rooms := _parse_rooms(user_input.get(CONF_ROOMS)):
+                options[CONF_ROOMS] = rooms
+            else:
+                options.pop(CONF_ROOMS, None)
             return self.async_create_entry(
                 title="",
-                data={
-                    CONF_USERNAME: user_input.get(CONF_USERNAME, ""),
-                    CONF_PASSWORD: user_input.get(CONF_PASSWORD, ""),
-                    CONF_HOST_TOKEN: user_input.get(CONF_HOST_TOKEN, ""),
-                    CONF_CLOUD_TOKEN: user_input.get(CONF_CLOUD_TOKEN, ""),
-                    CONF_CONFIGURATION_ID: user_input.get(CONF_CONFIGURATION_ID, ""),
-                    CONF_ROOMS: _parse_rooms(user_input.get(CONF_ROOMS)),
-                },
+                data=options,
             )
-        return self.async_show_form(step_id="init", data_schema=_OPTIONS_SCHEMA)
-
-
-async def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-    return SavantOptionsFlow(config_entry)
+        suggested = {
+            key: value
+            for key in (CONF_USERNAME, CONF_CONFIGURATION_ID)
+            if (value := self.config_entry.options.get(key))
+        }
+        if rooms := self.config_entry.options.get(CONF_ROOMS):
+            suggested[CONF_ROOMS] = "\n".join(rooms)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                _OPTIONS_SCHEMA, suggested
+            ),
+        )
