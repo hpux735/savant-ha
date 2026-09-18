@@ -452,13 +452,14 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node_id = uuid.uuid4().hex
         self._browse_nodes[node_id] = node
         browsable = node.get("actionType") == "browsable"
+        playable = node.get("actionType") == "action"
         title = str(node.get("title") or node.get("subtitle") or "Savant Music")
         return BrowseMedia(
-            media_class=MediaClass.DIRECTORY,
+            media_class=MediaClass.DIRECTORY if browsable else MediaClass.MUSIC,
             media_content_id=node_id,
             media_content_type=MediaType.MUSIC,
             title=title,
-            can_play=node.get("actionType") == "action",
+            can_play=playable,
             can_expand=browsable,
             thumbnail=(
                 self.get_browse_image_url(MediaType.MUSIC, node_id)

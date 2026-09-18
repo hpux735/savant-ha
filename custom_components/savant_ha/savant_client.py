@@ -84,7 +84,7 @@ _MdnsHostsCallback = Callable[[], Awaitable[list[str]]]
 
 # How long to wait for the host to authorize us before registering state anyway.
 AUTH_TIMEOUT = 5.0
-ARTWORK_TIMEOUT = 10.0
+ARTWORK_TIMEOUT = 3.0
 FILE_TRANSFER_TIMEOUT = 15.0
 MUSIC_BROWSE_TIMEOUT = 10.0
 MUSIC_SEARCH_READY_TIMEOUT = 5.0
@@ -1103,7 +1103,11 @@ class SavantClient:
             await self._ws.ping(KEEPALIVE_BYTE)
 
     def _handle_frame(self, data: bytes) -> None:
-        if self._artwork_future is not None and not self._artwork_future.done():
+        if (
+            self._artwork_future is not None
+            and not self._artwork_future.done()
+            and file_transfer_payload(data) is not None
+        ):
             self._handle_artwork_frame(data)
             return
         # The config archive is streamed as framed binary frames (not msgpack) — the
@@ -1168,7 +1172,9 @@ class SavantClient:
         image = extract_jpeg(bytes(self._artwork_bytes))
         if image is not None:
             self._artwork_image = image
-        if is_final and self._artwork_future is not None:
+            if self._artwork_future is not None and not self._artwork_future.done():
+                self._artwork_future.set_result(image)
+        elif is_final and self._artwork_future is not None and not self._artwork_future.done():
             self._artwork_future.set_result(self._artwork_image)
 
     def _handle_archive_frame(self, data: bytes) -> None:

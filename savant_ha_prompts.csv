@@ -143,3 +143,20 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1789669511183,2026-09-17T18:25:11.185Z,ses_savant_ha2_000,Commit and push,commit and push
 1789772182000,2026-09-18T22:56:22.000000Z,ses_savant_ha2_000,Progress summary,What did we do so far?
 1789772182001,2026-09-18T22:56:22.001000Z,ses_savant_ha2_000,Continue or clarify,"Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+1789773706000,2026-09-18T23:21:46.000000Z,ses_savant_ha2_000,Fix browse thumbnails and overlapping controls,"This seems almost better, but the folders seem to have the ability to have thumbnails, and the tracks seem to want to have thumbails, but they're all just blank.  Also, there's something odd when you click things in the browse screen, it's like there's 2 UI elements stacked on top of eachother."
+1789773706001,2026-09-18T23:21:46.001000Z,ses_savant_ha2_000,Thumbnail timeout logs,"2026-09-18 16:15:35.188 DEBUG (MainThread) [custom_components.savant_ha] Savant artwork fetch timed out
+2026-09-18 16:15:35.188 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:15:45.189 DEBUG (MainThread) [custom_components.savant_ha] Savant artwork fetch timed out
+2026-09-18 16:15:45.190 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:15:45.199 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:15:55.201 DEBUG (MainThread) [custom_components.savant_ha] Savant artwork fetch timed out
+2026-09-18 16:15:55.202 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:05.204 DEBUG (MainThread) [custom_components.savant_ha] Savant artwork fetch timed out
+2026-09-18 16:16:05.205 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:15.206 DEBUG (MainThread) [custom_components.savant_ha] Savant artwork fetch timed out
+2026-09-18 16:16:15.207 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:15.279 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:15.321 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:15.359 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:15.401 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}]
+2026-09-18 16:16:17.072 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload [{'URI': 'avc/Music/Audio Zone 4', 'payload': {'key': '<ARTWORK_KEY>', 'type': 'thumbnailArtwork'}}] "

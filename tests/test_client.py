@@ -282,7 +282,6 @@ def test_artwork_request_collects_jpeg():
             sent.append((uri, messages))
             client._handle_artwork_frame(_artwork_frame(b"\xff\xd8\xffjp"))
             client._handle_artwork_frame(_artwork_frame(b"eg\xff\xd9"))
-            client._handle_artwork_frame(_artwork_frame(b"", final=True))
 
         client.request = fake_request  # type: ignore[assignment]
         return await client.async_get_artwork("Music", "Audio Zone 1", "artwork-key")
@@ -299,6 +298,30 @@ def test_artwork_request_collects_jpeg():
             ],
         )
     ]
+
+
+def test_artwork_fetch_does_not_consume_interleaved_state_update():
+    client = SavantClient("10.0.0.5", 12345)
+    updates: list[tuple[str, object]] = []
+    client.on_state_update = lambda state, value: updates.append((state, value))
+
+    async def run():
+        client._artwork_future = asyncio.get_running_loop().create_future()
+        client._handle_frame(_artwork_frame(b"\xff\xd8\xffjp"))
+        client._handle_frame(
+            _frame(
+                {
+                    ENVELOPE_KEY_URI: URI_STATE_UPDATE,
+                    ENVELOPE_KEY_MESSAGES: [{"state": "Room.ActiveService", "value": "Music"}],
+                }
+            )
+        )
+        assert not client._artwork_future.done()
+        client._handle_frame(_artwork_frame(b"eg\xff\xd9"))
+        return await client._artwork_future
+
+    assert asyncio.run(run()) == b"\xff\xd8\xffjpeg\xff\xd9"
+    assert updates == [("Room.ActiveService", "Music")]
 
 
 def test_browse_artwork_request_uses_the_captured_thumbnail_type():
