@@ -34,7 +34,6 @@ from aiohttp import WSMsgType, hdrs
 from . import uiconfig
 from .const import (
     DASHBOARD_REQUEST_APPLY_SCENE,
-    DASHBOARD_REQUEST_SCENES,
     DASHBOARD_STATE_RECENT_SERVICES,
     DEVICE_APP,
     DEVICE_MAKE,
@@ -89,8 +88,11 @@ FILE_TRANSFER_TIMEOUT = 15.0
 MUSIC_BROWSE_TIMEOUT = 10.0
 MUSIC_SEARCH_READY_TIMEOUT = 5.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
-_JPEG_SOI = b"\xff\xd8\xff"
-_JPEG_EOI = b"\xff\xd9"
+# Resource guards for malformed/untrusted LAN input, not observed protocol maxima.
+_MAX_TRANSFER_BODY = 64 * 1024 * 1024
+_MAX_TRANSFER_LABEL = 4096
+_JPEG_SIGNATURE = b"\xff\xd8\xff"
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 # Message keys that must never be written to logs (PII per AGENTS.md).  Includes the
 # host identity/credential fields carried in deviceRecognized (hostSecret/hostUID/
@@ -127,25 +129,54 @@ def _redact(obj: Any) -> Any:
     return obj
 
 
-def extract_jpeg(data: bytes) -> bytes | None:
-    """Return the JPEG bounded by SOI/EOI markers in a raw artwork transfer."""
-    start = data.find(_JPEG_SOI)
-    if start < 0:
-        return None
-    end = data.find(_JPEG_EOI, start + len(_JPEG_SOI))
-    if end < 0:
-        return None
-    return data[start : end + len(_JPEG_EOI)]
+@dataclass(frozen=True)
+class FileTransferMessage:
+    """One decoded shared file/image transfer message (sibling PROTOCOL.md §13.0)."""
+
+    final: bool
+    declared_length: int
+    label: bytes
+    body: bytes
 
 
-def file_transfer_payload(data: bytes) -> tuple[bytes, bool] | None:
-    """Return the payload and final flag from an observed file-transfer frame."""
+@dataclass
+class _TransferState:
+    """Accumulated transfer state correlated by raw label on one connection."""
+
+    future: asyncio.Future[bytes | None] | None
+    declared_length: int | None = None
+    body: bytearray = field(default_factory=bytearray)
+    invalid: bool = False
+
+
+def parse_file_transfer_message(data: bytes) -> FileTransferMessage | None:
+    """Decode the shared transfer header without interpreting its raw label."""
     if len(data) < 14 or data[0] != 0x01 or data[1] not in (0x01, 0x81):
         return None
-    payload_start = 14 + data[13]
-    if len(data) < payload_start:
+    declared_length = int.from_bytes(data[2:10], "big")
+    label_length = int.from_bytes(data[10:14], "big")
+    if (
+        declared_length > _MAX_TRANSFER_BODY
+        or label_length > _MAX_TRANSFER_LABEL
+        or label_length > len(data) - 14
+    ):
         return None
-    return data[payload_start:], data[1] == 0x81
+    payload_start = 14 + label_length
+    return FileTransferMessage(
+        final=data[1] == 0x81,
+        declared_length=declared_length,
+        label=data[14:payload_start],
+        body=data[payload_start:],
+    )
+
+
+def image_content_type(data: bytes) -> str | None:
+    """Return the capture-backed media type for a complete image body."""
+    if data.startswith(_JPEG_SIGNATURE):
+        return "image/jpeg"
+    if data.startswith(_PNG_SIGNATURE):
+        return "image/png"
+    return None
 
 
 def _log_tls_info(ws: aiohttp.ClientWebSocketResponse) -> None:
@@ -454,8 +485,7 @@ class SavantClient:
         self._host = host
         self._port = port
         self._host_uid = host_uid
-        # Client device identity — generated per config entry if not supplied.  Must be
-        # non-UUID-shaped (see const.new_uid).
+        # Client device identity, generated once per config entry and then persisted.
         self._uid = uid or new_uid()
         self._home_id = home_id
         self._cloud_token = cloud_token
@@ -483,17 +513,11 @@ class SavantClient:
         self._post_auth_done = False
         self._port_warned = False
         self._auth_task: asyncio.Task | None = None
-        # Config-archive download (PROTOCOL.md §13): raw framed binary frames are
-        # accumulated here and reassembled once the final frame arrives.
-        self._uiconfig_frames: list[bytes] = []
         self._uiconfig_archive: bytes | None = None
-        # Artwork transfers are raw binary frames with no request correlation. Serialize
-        # them and locate JPEG markers instead of assuming the variable host prefix.
-        self._artwork_lock = asyncio.Lock()
-        self._archive_future: asyncio.Future[bytes | None] | None = None
-        self._artwork_bytes = bytearray()
-        self._artwork_image: bytes | None = None
-        self._artwork_future: asyncio.Future[bytes | None] | None = None
+        # File and image replies share one binary framing and correlate by raw label.
+        # Serialize our requests because same-label transfers have no sequence ID.
+        self._file_transfer_lock = asyncio.Lock()
+        self._file_transfers: dict[bytes, _TransferState] = {}
         self._pending_scene_requests: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._pending_music_requests: dict[
             tuple[str, str], asyncio.Future[dict[str, Any]]
@@ -631,25 +655,30 @@ class SavantClient:
         self,
         request: str,
         *,
-        component: str,
+        component: str | None,
         service_type: str,
         zone: str = "",
-        logical_component: str = "",
-        variant_id: str | None = "",
+        logical_component: str | None = "",
+        variant_id: str | None = None,
         request_args: dict[str, Any] | None = None,
+        include_request_id: bool = False,
     ) -> None:
         """Emit a ``service/request`` control message (PROTOCOL.md §6)."""
         message: dict[str, Any] = {
-            "component": component,
             "serviceType": service_type,
             "zone": zone,
-            "logicalComponent": logical_component,
             "request": request,
         }
+        if component is not None:
+            message["component"] = component
+        if logical_component is not None:
+            message["logicalComponent"] = logical_component
         if variant_id is not None:
             message["variantID"] = variant_id
         if request_args:
             message["requestArgs"] = request_args
+        if include_request_id:
+            message["requestId"] = uuid.uuid4().hex
         await self.request("service/request", [message])
 
     async def activate_scene(self, scene_id: str) -> None:
@@ -678,6 +707,45 @@ class SavantClient:
         finally:
             self._pending_scene_requests.pop(request_id, None)
 
+    async def _download_file_transfer(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        expected_label: bytes,
+        timeout: float,
+    ) -> bytes | None:
+        """Request one transfer and correlate its complete body by raw label."""
+        async with self._file_transfer_lock:
+            if expected_label in self._file_transfers:
+                LOGGER.debug("Savant transfer label is still draining after a timeout")
+                return None
+            future: asyncio.Future[bytes | None] = asyncio.get_running_loop().create_future()
+            state = _TransferState(future=future)
+            self._file_transfers[expected_label] = state
+            request_sent = False
+            try:
+                await self.request(URI_FILE_DOWNLOAD, messages)
+                request_sent = True
+                return await asyncio.wait_for(asyncio.shield(future), timeout)
+            except TimeoutError:
+                LOGGER.debug("Savant file transfer timed out")
+                state.future = None
+                future.cancel()
+                return None
+            except asyncio.CancelledError:
+                if request_sent:
+                    state.future = None
+                    future.cancel()
+                else:
+                    self._file_transfers.pop(expected_label, None)
+                raise
+            except (SavantConnectionError, aiohttp.ClientError, OSError):
+                self._file_transfers.pop(expected_label, None)
+                return None
+            finally:
+                if future.done() and state.future is future:
+                    self._file_transfers.pop(expected_label, None)
+
     async def async_get_artwork(
         self,
         component: str,
@@ -685,36 +753,20 @@ class SavantClient:
         key: str,
         artwork_type: str = "nowPlayingArtwork",
     ) -> bytes | None:
-        """Fetch now-playing JPEG artwork (sibling PROTOCOL.md §8.2)."""
+        """Fetch a complete JPEG or PNG artwork transfer (sibling PROTOCOL.md §8.2)."""
         if not key:
             return None
-        async with self._artwork_lock:
-            loop = asyncio.get_running_loop()
-            future: asyncio.Future[bytes | None] = loop.create_future()
-            self._artwork_bytes = bytearray()
-            self._artwork_image = None
-            self._artwork_future = future
-            try:
-                await self.request(
-                    URI_FILE_DOWNLOAD,
-                    [
-                        {
-                            "URI": f"avc/{component}/{logical_component}",
-                            "payload": {"key": key, "type": artwork_type},
-                        }
-                    ],
-                )
-                return await asyncio.wait_for(future, ARTWORK_TIMEOUT)
-            except TimeoutError:
-                LOGGER.debug("Savant artwork fetch timed out")
-                return None
-            except (SavantConnectionError, aiohttp.ClientError, OSError):
-                return None
-            finally:
-                if self._artwork_future is future:
-                    self._artwork_future = None
-                    self._artwork_bytes = bytearray()
-                    self._artwork_image = None
+        body = await self._download_file_transfer(
+            [
+                {
+                    "URI": f"avc/{component}/{logical_component}",
+                    "payload": {"key": key, "type": artwork_type},
+                }
+            ],
+            expected_label=key.encode(),
+            timeout=ARTWORK_TIMEOUT,
+        )
+        return body if body is not None and image_content_type(body) is not None else None
 
     async def async_browse_music(
         self,
@@ -940,27 +992,22 @@ class SavantClient:
                     return
                 if not self._authorized:
                     return
+            elif not self._authorized:
+                LOGGER.warning("Savant: deviceRecognized did not authorize the session")
+                return
             await self._post_auth()
         except (SavantError, aiohttp.ClientError, OSError, TimeoutError):
             pass
 
     async def _request_uiconfig(self) -> None:
-        # Download the authoritative config archive (PROTOCOL.md §13).  The response is
-        # streamed as framed binary frames, reassembled by _handle_frame.
-        async with self._artwork_lock:
-            self._uiconfig_frames = []
-            self._uiconfig_archive = None
-            future: asyncio.Future[bytes | None] = asyncio.get_running_loop().create_future()
-            self._archive_future = future
-            try:
-                await self.request(URI_FILE_DOWNLOAD, [{"filePath": "uiconfig.tar.gz"}])
-                LOGGER.debug("Savant -> requested uiconfig.tar.gz")
-                await asyncio.wait_for(future, FILE_TRANSFER_TIMEOUT)
-            except TimeoutError:
-                LOGGER.warning("Savant config archive download timed out")
-            finally:
-                if self._archive_future is future:
-                    self._archive_future = None
+        # Download the authoritative config archive through the shared transfer framing.
+        self._uiconfig_archive = await self._download_file_transfer(
+            [{"filePath": "uiconfig.tar.gz"}],
+            expected_label=b"uiconfig.tar.gz",
+            timeout=FILE_TRANSFER_TIMEOUT,
+        )
+        if self._uiconfig_archive is None:
+            LOGGER.warning("Savant config archive download did not complete")
 
     async def _post_auth(self) -> None:
         if self._post_auth_done:
@@ -980,7 +1027,6 @@ class SavantClient:
         await self._send_state_register()
         await self.request(URI_DCM_REQUEST, [{"request": "getMode"}])
         await self._send_user_data_register(USER_DATA_IMAGE_STATES)
-        await self._send_scenes_request()
 
     async def _send_state_register(self) -> None:
         # Subscribe by explicit dotted key (PROTOCOL.md §3/§5).  Rooms are discovered
@@ -1016,10 +1062,6 @@ class SavantClient:
             ],
         )
 
-    async def _send_scenes_request(self) -> None:
-        # Actively fetch the scene list; the response also embeds room names.
-        await self.request(URI_DASHBOARD_REQUEST, [{"request": DASHBOARD_REQUEST_SCENES}])
-
     async def _send_user_data_register(self, states: tuple[str, ...]) -> None:
         """Register the observed user-data update channels."""
         for state in states:
@@ -1029,10 +1071,10 @@ class SavantClient:
         was_connected = self._connected
         self._connected = False
         self._authorized = False
-        if self._artwork_future is not None and not self._artwork_future.done():
-            self._artwork_future.set_result(None)
-        if self._archive_future is not None and not self._archive_future.done():
-            self._archive_future.set_result(None)
+        for transfer in self._file_transfers.values():
+            if transfer.future is not None and not transfer.future.done():
+                transfer.future.set_result(None)
+        self._file_transfers.clear()
         for future in self._pending_scene_requests.values():
             if not future.done():
                 future.set_exception(SavantConnectionError("connection lost"))
@@ -1103,20 +1145,14 @@ class SavantClient:
             await self._ws.ping(KEEPALIVE_BYTE)
 
     def _handle_frame(self, data: bytes) -> None:
-        if (
-            self._artwork_future is not None
-            and not self._artwork_future.done()
-            and file_transfer_payload(data) is not None
-        ):
-            self._handle_artwork_frame(data)
-            return
-        # The config archive is streamed as framed binary frames (not msgpack) — the
-        # marker byte 0x01 with flag 0x01/0x81 (PROTOCOL.md §13).
         if data[:1] == b"\x01" and len(data) >= 2 and data[1] in (0x01, 0x81):
-            self._handle_archive_frame(data)
+            transfer = parse_file_transfer_message(data)
+            if transfer is None:
+                LOGGER.warning("Savant <- malformed file-transfer message")
+                return
+            self._handle_file_transfer_message(transfer)
             return
-        # host -> client is gzip-compressed msgpack (PROTOCOL.md §1), except the
-        # un-compressed ``featureLock`` map.
+        # Host maps are gzip-compressed MessagePack; transfers use the branch above.
         payload = gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
         obj = msgpack.unpackb(payload, raw=False)
         if not isinstance(obj, dict):
@@ -1154,43 +1190,32 @@ class SavantClient:
         else:
             LOGGER.debug("Unhandled Savant URI %r", uri)
 
-    def _handle_artwork_frame(self, data: bytes) -> None:
-        """Accumulate raw artwork chunks and finish when their JPEG ends."""
-        transfer = file_transfer_payload(data)
-        if transfer is None:
+    def _handle_file_transfer_message(self, message: FileTransferMessage) -> None:
+        """Append one correlated transfer message and enforce audited completion."""
+        state = self._file_transfers.get(message.label)
+        if state is None:
+            LOGGER.debug("Savant <- ignored transfer with no matching request")
             return
-        payload, is_final = transfer
-        if not self._artwork_bytes:
-            start = payload.find(_JPEG_SOI)
-            if start < 0:
-                if is_final and self._artwork_future is not None:
-                    self._artwork_future.set_result(None)
-                return
-            self._artwork_bytes.extend(payload[start:])
-        else:
-            self._artwork_bytes.extend(payload)
-        image = extract_jpeg(bytes(self._artwork_bytes))
-        if image is not None:
-            self._artwork_image = image
-            if self._artwork_future is not None and not self._artwork_future.done():
-                self._artwork_future.set_result(image)
-        elif is_final and self._artwork_future is not None and not self._artwork_future.done():
-            self._artwork_future.set_result(self._artwork_image)
-
-    def _handle_archive_frame(self, data: bytes) -> None:
-        self._uiconfig_frames.append(data)
-        # byte 1 = 0x81 marks the final frame (PROTOCOL.md §13).
-        if data[1] == 0x81:
-            self._uiconfig_archive = uiconfig.reassemble_archive(self._uiconfig_frames)
-            frame_count = len(self._uiconfig_frames)
-            self._uiconfig_frames.clear()
-            LOGGER.info(
-                "Savant uiconfig downloaded: %d frame(s), %d bytes",
-                frame_count,
-                len(self._uiconfig_archive),
-            )
-            if self._archive_future is not None and not self._archive_future.done():
-                self._archive_future.set_result(self._uiconfig_archive)
+        if state.declared_length is None:
+            state.declared_length = message.declared_length
+        elif state.declared_length != message.declared_length:
+            state.invalid = True
+        if not state.invalid:
+            state.body.extend(message.body)
+            if len(state.body) > message.declared_length:
+                state.invalid = True
+        if not message.final:
+            return
+        complete = (
+            not state.invalid
+            and state.declared_length is not None
+            and len(state.body) == state.declared_length
+        )
+        result = bytes(state.body) if complete else None
+        if state.future is not None and not state.future.done():
+            state.future.set_result(result)
+        elif state.future is None:
+            self._file_transfers.pop(message.label, None)
 
     def _handle_device_recognized(self, messages: list[Any]) -> None:
         # Host's answer to devicePresent (PROTOCOL.md §4.0): carries the
@@ -1199,7 +1224,7 @@ class SavantClient:
         first = messages[0] if messages and isinstance(messages[0], dict) else {}
         self._authentication_required = bool(first.get("authentication", True))
         if not self._authentication_required:
-            self._authorized = True
+            self._authorized = bool(first.get("authorized", False))
         LOGGER.info(
             "Savant deviceRecognized (authentication=%s)",
             self._authentication_required,

@@ -1,8 +1,7 @@
 """Tests for archive-derived ``service/request`` payload construction (control.py).
 
-These capture the reverse-engineered, live-verified control surface: DimmerSet/SwitchOn
-lighting payloads, archive-derived HVAC scope and thermostat addresses, shade command
-addresses, and audio-zone state-key prefixes.
+These capture the reverse-engineered control surface: DimmerSet lighting payloads,
+archive-derived HVAC scope, shade arguments, and audio-zone state-key prefixes.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 from custom_components.savant_ha import control
 from custom_components.savant_ha.const import (
     HVAC_STATE_PREFIX,
-    SVC_AV_SAVANTMUSIC,
     SVC_ENV_HVAC,
 )
 
@@ -60,7 +58,7 @@ def test_light_address_args_empty_address_is_null():
     }
 
 
-def test_dimmer_args_uses_archive_fade_delay_and_curve():
+def test_standard_dimmer_args_use_captured_fade_and_delay():
     args = control.dimmer_args(_light(), 100)
     assert args["DimmerLevel"] == 100
     assert args["Address1"] == "002"
@@ -68,11 +66,14 @@ def test_dimmer_args_uses_archive_fade_delay_and_curve():
     assert args["Address6"] == "(null)"
     assert args["FadeTime"] == 2
     assert args["DelayTime"] == 0
-    assert args["Curve"] == "Custom 1"
+    assert "Curve" not in args
 
 
 def test_dimmer_args_uses_technology_for_curve():
-    device = _light(control={"entity_type": "DMX", "technology": "Infinite Color"})
+    device = _light(
+        state_name="Savant.Lighting.CurrentColor_1_002",
+        control={"entity_type": "DMX", "technology": "Infinite Color"},
+    )
     assert control.dimmer_args(device, 50)["Curve"] == "Infinite Color"
 
 
@@ -138,18 +139,11 @@ def test_color_dimmer_can_omit_color_when_no_state_is_known():
     assert "bleColor" not in args
 
 
-def test_dimmer_args_includes_flat_ble_color_keys():
-    # The archive's DimmerSet definition requires these flat keys even for dimmers.
+def test_standard_dimmer_omits_color_only_fields():
     args = control.dimmer_args(_light(), 100)
-    for key in (
-        "bleColorRed",
-        "bleColorGreen",
-        "bleColorBlue",
-        "bleColorWhite",
-        "kelvin",
-    ):
-        assert key in args
-        assert args[key] == 0
+    assert args["IsTrueImage"] is False
+    assert "bleColor" not in args
+    assert "Curve" not in args
 
 
 def test_dimmer_args_defaults_fade_time_when_absent():
@@ -159,10 +153,10 @@ def test_dimmer_args_defaults_fade_time_when_absent():
     assert args["DelayTime"] == "0"
 
 
-def test_dimmer_command_defaults_and_archive_override():
+def test_dimmer_command_does_not_execute_uncaptured_archive_descriptors():
     assert control.dimmer_command(_light()) == "DimmerSet"
     device = _light(control={"entity_type": "Dimmer", "dimmer_command": "DimUp"})
-    assert control.dimmer_command(device) == "DimUp"
+    assert control.dimmer_command(device) == "DimmerSet"
 
 
 def test_is_switch_distinguishes_switch_from_dimmer():
@@ -207,28 +201,21 @@ def test_climate_identity_falls_back_to_default_prefix():
     assert logical == "HVAC_controller"
 
 
-def test_climate_scope_is_archive_derived_with_empty_zone():
+def test_climate_scope_returns_invariant_target_fields():
     assert control.climate_scope("CLIW220", "HVAC_controller") == {
         "component": "CLIW220",
         "service_type": SVC_ENV_HVAC,
-        "zone": "",
         "logical_component": "HVAC_controller",
         "variant_id": "1",
     }
 
 
-def test_thermostat_args_single_point_uses_null_second_address():
-    assert control.thermostat_args("1,", "_1") == {
-        "ThermostatAddress": "1",
-        "ThermostatAddress2": "(null)",
-    }
+def test_thermostat_args_single_point_uses_only_captured_address():
+    assert control.thermostat_args("1,", "_1") == {"ThermostatAddress": "1"}
 
 
 def test_thermostat_args_falls_back_to_suffix_when_no_addresses():
-    assert control.thermostat_args("", "_7") == {
-        "ThermostatAddress": "7",
-        "ThermostatAddress2": "(null)",
-    }
+    assert control.thermostat_args("", "_7") == {"ThermostatAddress": "7"}
 
 
 def test_suffix_address_strips_underscore():
@@ -237,16 +224,6 @@ def test_suffix_address_strips_underscore():
 
 
 # ------------------------------------------------------------------- shade
-
-
-def test_shade_address_args_uses_five_addresses():
-    assert control.shade_address_args("c2aac4873a450684,,,,") == {
-        "Address1": "c2aac4873a450684",
-        "Address2": "(null)",
-        "Address3": "(null)",
-        "Address4": "(null)",
-        "Address5": "(null)",
-    }
 
 
 def test_shade_set_args_preserves_controller_address_shape():
@@ -300,17 +277,14 @@ def test_audio_zone_logical_component_from_zone_or_name():
     assert control.audio_zone_logical_component({"name": "Other"}) is None
 
 
-def test_zone_state_prefix_includes_service_type():
-    assert (
-        control.zone_state_prefix("Music", "Audio Zone 1")
-        == f"Music.Audio Zone 1.{SVC_AV_SAVANTMUSIC}."
-    )
+def test_zone_state_prefix_uses_ordinary_media_shape():
+    assert control.zone_state_prefix("Music", "Audio Zone 1") == "Music.Audio Zone 1."
 
 
 def test_zone_state_prefix_supports_non_audio_zone_sources():
     assert (
         control.zone_state_prefix("Living Room Sound Bar", "AVB Stream 2")
-        == f"Living Room Sound Bar.AVB Stream 2.{SVC_AV_SAVANTMUSIC}."
+        == "Living Room Sound Bar.AVB Stream 2."
     )
 
 
@@ -337,8 +311,7 @@ def test_parse_dimmer_level_on_and_off():
 
 
 def test_parse_switch_state_uses_dimmer_level():
-    # Switches also report CurrentDimmerLevel (0 = off, 100 = on); their *control* uses
-    # SwitchOn/SwitchOff, but their *state* parses identically to a dimmer.
+    # Switch state parses like a dimmer, but controls remain unexposed without a capture.
     assert control.parse_light_state(
         "Savant.Lighting.CurrentDimmerLevel_1_010", 100
     ) == (True, 255)

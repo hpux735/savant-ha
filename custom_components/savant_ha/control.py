@@ -13,7 +13,6 @@ from typing import Any
 
 from .const import (
     HVAC_STATE_PREFIX,
-    SVC_AV_SAVANTMUSIC,
     SVC_ENV_HVAC,
     VERB_DIMMER_SET,
 )
@@ -53,10 +52,8 @@ def is_color_light(device: dict[str, Any]) -> bool:
 
 
 def dimmer_command(device: dict[str, Any]) -> str:
-    """The load's dimmer verb from the archive, defaulting to ``DimmerSet``."""
-    control = device.get("control")
-    command = control.get("dimmer_command") if isinstance(control, dict) else ""
-    return command or VERB_DIMMER_SET
+    """Return the only capture-verified lighting load verb."""
+    return VERB_DIMMER_SET
 
 
 def dimmer_args(
@@ -67,9 +64,8 @@ def dimmer_args(
 ) -> dict[str, Any]:
     """Build the full ``DimmerSet`` ``requestArgs``.
 
-    Standard dimmers retain the archive-derived flat color fields. Color-capable loads
-    use the observed nested ``bleColor`` map, allowing an RGBW update without erasing
-    the existing color when Home Assistant only changes brightness (PROTOCOL.md §6).
+    Standard dimmers omit RGB-only fields. Color-capable loads use the observed nested
+    ``bleColor`` map (sibling PROTOCOL.md §7.3).
     """
     control = device.get("control") if isinstance(device.get("control"), dict) else {}
     args: dict[str, Any] = light_address_args(str(device.get("addresses") or ""))
@@ -90,8 +86,9 @@ def dimmer_args(
     delay_time = control.get("delay_time")
     args["FadeTime"] = fade_time if fade_time is not None else "0.5"
     args["DelayTime"] = delay_time if delay_time is not None else "0"
-    args["Curve"] = control.get("technology") or "Custom 1"
+    args["IsTrueImage"] = False
     if is_color_light(device):
+        args["Curve"] = control.get("technology") or "Custom 1"
         if rgbw_color is not None:
             red, green, blue, white = (max(0, min(255, int(value))) for value in rgbw_color)
             args["bleColor"] = {
@@ -102,15 +99,6 @@ def dimmer_args(
                 "kelvin": 0,
             }
         return args
-    args.update(
-        {
-            "bleColorRed": 0,
-            "bleColorGreen": 0,
-            "bleColorBlue": 0,
-            "bleColorWhite": 0,
-            "kelvin": 0,
-        }
-    )
     return args
 
 
@@ -149,32 +137,24 @@ def climate_identity(state_name: str, suffix: str) -> tuple[str, str, str, str]:
 
 
 def climate_scope(component: str, logical_component: str) -> dict[str, str]:
-    """The HVAC ``service/request`` scope (archive-derived, empty zone)."""
+    """Build the invariant portion of an HVAC ``service/request`` scope."""
     return {
         "component": component,
         "service_type": SVC_ENV_HVAC,
-        "zone": "",
         "logical_component": logical_component,
         "variant_id": "1",
     }
 
 
 def thermostat_args(addresses: str, suffix: str) -> dict[str, str]:
-    """Build ``ThermostatAddress``/``ThermostatAddress2`` from the archive record.
+    """Build the captured single ``ThermostatAddress`` from the archive record.
 
-    Both keys are required by the archive's HVAC request definitions; a single-point
-    thermostat reports ``ThermostatAddress2: "(null)"``.
+    Only the single ``ThermostatAddress`` field is capture-verified. Two-address
+    CoolMaster controls remain disabled until their request shape is captured.
     """
     parts = split_addresses(addresses)
     address = parts[0] if parts and parts[0] else suffix_address(suffix)
-    address_2 = parts[1] if len(parts) > 1 and parts[1] else "(null)"
-    return {"ThermostatAddress": address, "ThermostatAddress2": address_2}
-
-
-def shade_address_args(addresses: str, count: int = 5) -> dict[str, str]:
-    """Build ``Address1..N`` (default 5) for shade commands (``ShadeUp/Down/Stop``)."""
-    parts = [part.strip() or "(null)" for part in addresses.split(",")] if addresses else []
-    return {f"Address{index}": value for index, value in enumerate(parts[:count], start=1)}
+    return {"ThermostatAddress": address}
 
 
 def shade_set_args(
@@ -241,9 +221,9 @@ def audio_zone_logical_component(device: dict[str, Any]) -> str | None:
 def zone_state_prefix(component: str, logical_component: str) -> str:
     """The dotted state-key prefix for one audio zone.
 
-    ``<component>.<logical>.SVC_AV_SAVANTMUSIC.`` (zone numbers are per-component).
+    ``<component>.<logical>.`` (logical names are component-scoped).
     """
-    return f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}."
+    return f"{component}.{logical_component}."
 
 
 def parse_media_time(value: Any) -> float | None:

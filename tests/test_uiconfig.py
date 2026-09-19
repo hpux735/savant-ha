@@ -23,7 +23,14 @@ def _make_sqlite_bytes() -> bytes:
         " stateName TEXT, zoneID INTEGER, entityType TEXT)"
     )
     conn.execute(
-        "CREATE TABLE HVACEntities (id INTEGER PRIMARY KEY, name TEXT, zoneID INTEGER)"
+        "CREATE TABLE HVACEntities (id INTEGER PRIMARY KEY, name TEXT, zoneID INTEGER,"
+        " addresses TEXT, stateName TEXT, heat INTEGER, cool INTEGER, auto INTEGER,"
+        " temperatureSetPoints INTEGER, tempMinRange REAL, tempMaxRange REAL,"
+        " tempBuffer REAL, isCelsius INTEGER)"
+    )
+    conn.execute(
+        "CREATE TABLE ShadeEntities (id INTEGER PRIMARY KEY, name TEXT, addresses TEXT,"
+        " stateName TEXT, zoneID INTEGER, pressCommand TEXT, dimmerCommand TEXT)"
     )
     conn.execute(
         "CREATE TABLE ServiceImplementationServiceResources"
@@ -48,11 +55,11 @@ def _make_sqlite_bytes() -> bytes:
     conn.execute(
         "INSERT INTO Zones VALUES (10,'Kitchen','Environmental',"
         "'SVC_ENV_LIGHTING','Host'),(11,'Kitchen','Environmental',"
+        "'SVC_ENV_HVAC','HVAC_controller'),(12,'Living Room','Environmental',"
         "'SVC_ENV_HVAC','HVAC_controller')"
     )
-    # A shared HVAC zone maps to multiple rooms. Its Environmental zone name, rather
-    # than the last ZoneRoomMap row, must determine the imported device's area.
-    conn.execute("INSERT INTO ZoneRoomMap VALUES (10,1),(11,1),(11,2)")
+    # A shared HVAC zone maps to multiple rooms, so it has no safe suggested area.
+    conn.execute("INSERT INTO ZoneRoomMap VALUES (10,1),(11,1),(11,2),(12,2)")
     conn.execute(
         "INSERT INTO LightEntities VALUES"
         " (1,'Kitchen Recessed','002,1,(null)',"
@@ -62,7 +69,22 @@ def _make_sqlite_bytes() -> bytes:
         " (3,'Kitchen Fan','002,3,(null)',"
         "'Proj.Host.CurrentDimmerLevel_3_002',10,'Switch')"
     )
-    conn.execute("INSERT INTO HVACEntities VALUES (1,'Main Thermostat',11)")
+    conn.execute(
+        "INSERT INTO HVACEntities VALUES"
+        " (1,'Main Thermostat',11,'1,',"
+        "'CLIW220.HVAC_controller.ThermostatCurrentTemperature_1',1,1,1,2,50,90,4,0),"
+        " (2,'Living Thermostat',12,'1,',"
+        "'Living HVAC.HVAC_controller.ThermostatCurrentTemperature_1',1,0,0,1,50,80,4,0)"
+    )
+    conn.execute(
+        "INSERT INTO ShadeEntities VALUES"
+        " (1,'Kitchen Shade','002,4,(null)',"
+        "'Proj.Host.ShadeLevel_4_002',10,'ShadeSet',''),"
+        " (2,'Kitchen Lutron Shade','5',"
+        "'Lighting.Lighting_controller.DimmerLevel_5',10,'','RFShadeSet'),"
+        " (3,'Unsupported Shade','6',"
+        "'Lighting.Lighting_controller.DimmerLevel_6',10,'ShadeSet','ShadeSet')"
+    )
     conn.execute(
         "INSERT INTO ServiceImplementationServiceResources VALUES"
         " (1,'Kitchen','Music','Audio Zone 1','SVC_AV_SAVANTMUSIC','Music',"
@@ -90,27 +112,7 @@ def _make_sqlite_bytes() -> bytes:
     return data
 
 
-def _frame_archive(gz: bytes) -> list[bytes]:
-    frames: list[bytes] = []
-    total = len(gz)
-    filename = b"uiconfig.tar.gz"
-    chunk = 64
-    for i in range(0, total, chunk):
-        part = gz[i : i + chunk]
-        flag = 0x81 if (i + chunk) >= total else 0x01
-        header = (
-            bytes([0x01, flag])
-            + b"\x00" * 6
-            + total.to_bytes(2, "big")
-            + b"\x00" * 3
-            + bytes([len(filename)])
-            + filename
-        )
-        frames.append(header + part)
-    return frames
-
-
-def test_reassemble_and_parse_devices():
+def test_parse_completed_archive_and_devices():
     sqlite_bytes = _make_sqlite_bytes()
     tar_bytes = io.BytesIO()
     with tarfile.open(fileobj=tar_bytes, mode="w") as tar:
@@ -119,15 +121,12 @@ def test_reassemble_and_parse_devices():
         tar.addfile(info, io.BytesIO(sqlite_bytes))
     gz = gzip.compress(tar_bytes.getvalue())
 
-    frames = _frame_archive(gz)
-    reassembled = uiconfig.reassemble_archive(frames)
-    assert reassembled[:2] == b"\x1f\x8b"
-
-    devices = uiconfig.parse_archive(reassembled)
+    devices = uiconfig.parse_archive(gz)
     by_type = {d.device_type for d in devices}
     assert "light" in by_type
     assert "climate" in by_type
     assert "media_player" in by_type
+    assert "cover" in by_type
 
     light = next(d for d in devices if d.device_type == "light")
     assert light.name == "Kitchen Recessed"
@@ -137,12 +136,29 @@ def test_reassemble_and_parse_devices():
     assert light.entity_id == "light:1"
     assert light.extra["entity_type"] == "Dimmer"
     assert all(device.name != "AUX B" for device in devices)
-    switch = next(d for d in devices if d.name == "Kitchen Fan")
-    assert switch.extra["entity_type"] == "Switch"
+    assert all(device.name != "Kitchen Fan" for device in devices)
+
+    covers = [d for d in devices if d.device_type == "cover"]
+    assert [d.name for d in covers] == ["Kitchen Shade", "Kitchen Lutron Shade"]
+    assert [d.extra["shade_command"] for d in covers] == ["ShadeSet", "RFShadeSet"]
 
     climate = next(d for d in devices if d.device_type == "climate")
     assert climate.name == "Main Thermostat"
-    assert climate.room == "Kitchen"
+    assert climate.room == ""
+    assert climate.zone == ""
+    assert climate.extra == {
+        "heat": 1,
+        "cool": 1,
+        "auto": 1,
+        "temperatureSetPoints": 2,
+        "tempMinRange": 50.0,
+        "tempMaxRange": 90.0,
+        "tempBuffer": 4.0,
+        "isCelsius": 0,
+    }
+    scoped_climate = next(d for d in devices if d.name == "Living Thermostat")
+    assert scoped_climate.room == "Living Room"
+    assert scoped_climate.extra["zone_scope"] == "Living Room"
 
     media = [d for d in devices if d.device_type == "media_player"]
     assert [(d.name, d.room, d.component, d.zone) for d in media] == [
@@ -154,12 +170,6 @@ def test_reassemble_and_parse_devices():
     apple_tv = media[-1]
     assert apple_tv.extra["service_type"] == "SVC_AV_APPLEREMOTEMEDIASERVER"
     assert apple_tv.extra["requests"] == ["PowerOn", "PowerOff", "SetVolume", "Play", "Pause"]
-
-
-def test_reassemble_ignores_non_archive_frames():
-    frames = _frame_archive(gzip.compress(b"hello world"))
-    frames.insert(0, b"\x80\x01not-an-archive-frame")
-    assert uiconfig.reassemble_archive(frames)[:2] == b"\x1f\x8b"
 
 
 def test_parse_archive_empty():

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import re
 
 import msgpack
 import pytest
@@ -74,23 +73,19 @@ def test_host_info_from_record_extracts_known_fields():
     assert info.extra["onboardKey"] == "ignore-me-not"
 
 
-def test_new_uid_is_not_uuid_shaped():
-    # The host ignores devicePresent for UUID-shaped uids (32-hex substring), so the
-    # generated uid must not look like a UUID.
-    for _ in range(20):
-        uid = new_uid()
-        assert uid.startswith("homeassistant-")
-        assert not re.search(r"[0-9a-fA-F]{32}", uid)
+def test_new_uid_is_namespaced_and_unique():
+    uids = {new_uid() for _ in range(20)}
+    assert len(uids) == 20
+    assert all(uid.startswith("homeassistant-") for uid in uids)
 
 
 def test_hvac_service_type_is_available_to_platforms():
     assert SVC_ENV_HVAC == "SVC_ENV_HVAC"
 
 
-def test_client_defaults_to_non_uuid_uid():
+def test_client_defaults_to_namespaced_uid():
     client = SavantClient("10.0.0.5", 12345)
     assert client._uid.startswith("homeassistant-")
-    assert not re.search(r"[0-9a-fA-F]{32}", client._uid)
 
 
 def test_handle_frame_decodes_gzipped_state_update():
@@ -111,11 +106,10 @@ def test_handle_frame_decodes_gzipped_state_update():
     assert seen == [("Living Room.CurrentVolume", 30)]
 
 
-def test_handle_frame_tolerates_uncompressed_frame():
-    # featureLock is un-compressed msgbpack (PROTOCOL.md §1).
+def test_handle_frame_decodes_gzipped_feature_lock():
     client = SavantClient("10.0.0.5", 12345)
     client._handle_frame(
-        _frame({ENVELOPE_KEY_URI: "featureLock", ENVELOPE_KEY_MESSAGES: []}, gzipped=False)
+        _frame({ENVELOPE_KEY_URI: "featureLock", ENVELOPE_KEY_MESSAGES: []})
     )
 
 
@@ -193,7 +187,8 @@ def test_post_auth_matches_observed_state_startup_order():
         async def fake_request(uri, messages):
             sent.append((uri, messages))
             if uri == "session/fileDownload":
-                client._handle_archive_frame(_artwork_frame(b"archive", final=True))
+                client._handle_frame(_transfer_frame(b"uiconfig.tar.gz", 7, b"archive"))
+                client._handle_frame(_transfer_frame(b"uiconfig.tar.gz", 7, final=True))
 
         client.request = fake_request  # type: ignore[assignment]
         await client._post_auth()
@@ -217,14 +212,13 @@ def test_post_auth_matches_observed_state_startup_order():
         ("dcm/request", [{"request": "getMode"}]),
         ("dis/userData/register", [{"state": "global.image.update"}]),
         ("dis/userData/register", [{"state": "user.image.update"}]),
-        ("dis/dashboard/request", [{"request": "GetAVAutomationScenes"}]),
     ]
 
 
 def test_subscribe_keys_include_every_category():
     keys = build_default_subscribe_keys(rooms=["Living Room"])
     assert any(k == "HVAC Controller.HVAC_controller.ThermostatCurrentTemperature_1" for k in keys)
-    assert any(k == "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" for k in keys)
+    assert any(k == "Music.Audio Zone 1.CurrentSongName" for k in keys)
     assert "global.CurrentTemperature" not in keys
     assert "Living Room.RoomLightsAreOn" in keys
     assert "Living Room.RoomCurrentTemperature" not in keys
@@ -255,22 +249,76 @@ def test_device_state_keys_passthrough_for_non_climate():
 
 
 def test_audio_zone_state_keys_keep_component_identity():
-    keys = audio_zone_state_keys("Living Room Sound Bar", "Audio Zone 1")
+    keys = audio_zone_state_keys("Living Room Sound Bar", "Audio Zone 1", "2")
     assert "Living Room Sound Bar.Audio Zone 1.CurrentSongName" in keys
-    assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" in keys
-    assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.ZonesActiveIn" in keys
+    assert "Living Room Sound Bar.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" not in keys
+    assert "Living Room Sound Bar.Audio Zone 1.2.SVC_AV_SAVANTMUSIC.ZonesActiveIn" in keys
 
 
-def test_extract_jpeg_discards_raw_transfer_prefix_and_suffix():
-    assert sc.extract_jpeg(b"header\x00\xff\xd8\xffimage\xff\xd9trailer") == (
-        b"\xff\xd8\xffimage\xff\xd9"
+def test_image_content_type_detects_complete_body_signature():
+    assert sc.image_content_type(b"\xff\xd8\xffjpeg") == "image/jpeg"
+    assert sc.image_content_type(b"\x89PNG\r\n\x1a\npng") == "image/png"
+    assert sc.image_content_type(b"prefix\xff\xd8\xffjpeg") is None
+
+
+def _transfer_frame(
+    label: bytes, declared_length: int, body: bytes = b"", final: bool = False
+) -> bytes:
+    return (
+        b"\x01"
+        + (b"\x81" if final else b"\x01")
+        + declared_length.to_bytes(8, "big")
+        + len(label).to_bytes(4, "big")
+        + label
+        + body
     )
-    assert sc.extract_jpeg(b"header\x00\xff\xd8\xffpartial") is None
 
 
-def _artwork_frame(payload: bytes, final: bool = False) -> bytes:
-    key = b"artwork-key"
-    return b"\x01" + (b"\x81" if final else b"\x01") + b"\0" * 11 + bytes([len(key)]) + key + payload
+def test_parse_file_transfer_message_reads_full_width_lengths():
+    label = b"x" * 300
+    message = sc.parse_file_transfer_message(_transfer_frame(label, 0x10001, b"data"))
+    assert message == sc.FileTransferMessage(
+        final=False,
+        declared_length=0x10001,
+        label=label,
+        body=b"data",
+    )
+
+
+def test_parse_file_transfer_message_rejects_truncated_label():
+    frame = b"\x01\x01" + (4).to_bytes(8, "big") + (10).to_bytes(4, "big") + b"short"
+    assert sc.parse_file_transfer_message(frame) is None
+
+
+def test_transfer_rejects_short_final_body():
+    client = SavantClient("10.0.0.5", 12345)
+
+    async def run():
+        async def fake_request(uri, messages):
+            client._handle_frame(_transfer_frame(b"artwork-key", 20, b"\xff\xd8\xffshort"))
+            client._handle_frame(_transfer_frame(b"artwork-key", 20, final=True))
+
+        client.request = fake_request  # type: ignore[assignment]
+        return await client.async_get_artwork("Music", "Audio Zone 1", "artwork-key")
+
+    assert asyncio.run(run()) is None
+
+
+def test_transfer_ignores_an_unrelated_label():
+    client = SavantClient("10.0.0.5", 12345)
+    image = b"\xff\xd8\xffjpeg\xff\xd9"
+
+    async def run():
+        async def fake_request(uri, messages):
+            client._handle_frame(_transfer_frame(b"other-key", len(image), image))
+            client._handle_frame(_transfer_frame(b"other-key", len(image), final=True))
+            client._handle_frame(_transfer_frame(b"artwork-key", len(image), image))
+            client._handle_frame(_transfer_frame(b"artwork-key", len(image), final=True))
+
+        client.request = fake_request  # type: ignore[assignment]
+        return await client.async_get_artwork("Music", "Audio Zone 1", "artwork-key")
+
+    assert asyncio.run(run()) == image
 
 
 def test_artwork_request_collects_jpeg():
@@ -280,8 +328,10 @@ def test_artwork_request_collects_jpeg():
     async def run():
         async def fake_request(uri, messages):
             sent.append((uri, messages))
-            client._handle_artwork_frame(_artwork_frame(b"\xff\xd8\xffjp"))
-            client._handle_artwork_frame(_artwork_frame(b"eg\xff\xd9"))
+            client._handle_frame(_transfer_frame(b"artwork-key", 9, b"\xff\xd8\xffjp"))
+            client._handle_frame(_transfer_frame(b"artwork-key", 9, b"eg\xff\xd9"))
+            assert not client._file_transfers[b"artwork-key"].future.done()
+            client._handle_frame(_transfer_frame(b"artwork-key", 9, final=True))
 
         client.request = fake_request  # type: ignore[assignment]
         return await client.async_get_artwork("Music", "Audio Zone 1", "artwork-key")
@@ -306,8 +356,15 @@ def test_artwork_fetch_does_not_consume_interleaved_state_update():
     client.on_state_update = lambda state, value: updates.append((state, value))
 
     async def run():
-        client._artwork_future = asyncio.get_running_loop().create_future()
-        client._handle_frame(_artwork_frame(b"\xff\xd8\xffjp"))
+        async def fake_request(uri, messages):
+            return None
+
+        client.request = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(
+            client.async_get_artwork("Music", "Audio Zone 1", "artwork-key")
+        )
+        await asyncio.sleep(0)
+        client._handle_frame(_transfer_frame(b"artwork-key", 9, b"\xff\xd8\xffjp"))
         client._handle_frame(
             _frame(
                 {
@@ -316,9 +373,10 @@ def test_artwork_fetch_does_not_consume_interleaved_state_update():
                 }
             )
         )
-        assert not client._artwork_future.done()
-        client._handle_frame(_artwork_frame(b"eg\xff\xd9"))
-        return await client._artwork_future
+        assert not task.done()
+        client._handle_frame(_transfer_frame(b"artwork-key", 9, b"eg\xff\xd9"))
+        client._handle_frame(_transfer_frame(b"artwork-key", 9, final=True))
+        return await task
 
     assert asyncio.run(run()) == b"\xff\xd8\xffjpeg\xff\xd9"
     assert updates == [("Room.ActiveService", "Music")]
@@ -331,26 +389,34 @@ def test_browse_artwork_request_uses_the_captured_thumbnail_type():
     async def run():
         async def fake_request(uri, messages):
             sent.append((uri, messages))
-            client._handle_artwork_frame(_artwork_frame(b"\xff\xd8\xffjpeg\xff\xd9", final=True))
+            image = b"\x89PNG\r\n\x1a\npng"
+            client._handle_frame(_transfer_frame(b"thumbnail-key", len(image), image))
+            client._handle_frame(_transfer_frame(b"thumbnail-key", len(image), final=True))
 
         client.request = fake_request  # type: ignore[assignment]
         return await client.async_get_artwork(
             "Music", "Audio Zone 1", "thumbnail-key", artwork_type="thumbnailArtwork"
         )
 
-    assert asyncio.run(run()) == b"\xff\xd8\xffjpeg\xff\xd9"
+    assert asyncio.run(run()) == b"\x89PNG\r\n\x1a\npng"
     assert sent[0][1][0]["payload"] == {
         "key": "thumbnail-key",
         "type": "thumbnailArtwork",
     }
 
 
-def test_default_music_subscriptions_include_both_observed_key_shapes():
+def test_default_music_subscriptions_use_audited_key_shapes():
     keys = build_default_subscribe_keys()
     assert "Music.Audio Zone 1.CurrentSongName" in keys
-    assert "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" in keys
+    assert "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName" not in keys
     assert "Music.Audio Zone 1.refreshLMQ3" in keys
-    assert "Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.refreshLMQ3" in keys
+    assert "Music.Audio Zone 1.1.SVC_AV_SAVANTMUSIC.ZonesActiveIn" in keys
+
+
+def test_archive_inventory_disables_guessed_default_subscriptions():
+    keys = build_default_subscribe_keys(include_legacy_defaults=False)
+    assert not any(key.startswith("HVAC Controller.") for key in keys)
+    assert not any(key.startswith("Music.Audio Zone") for key in keys)
 
 
 def test_local_login_uses_user_password_form():
@@ -407,8 +473,18 @@ def test_device_present_omits_empty_cloud_fields():
 
 def test_room_from_state_key():
     assert room_from_state_key("Living Room.RoomCurrentTemperature") == "Living Room"
+    assert room_from_state_key("Living.Room.BrightnessLevel") == "Living.Room"
     assert room_from_state_key("Living Room.BrightnessLevel") == "Living Room"
     assert room_from_state_key("Music.Audio Zone 1.SVC_AV_SAVANTMUSIC.CurrentSongName") is None
+    assert room_from_state_key("Music.Audio Zone 1.CurrentVolume") is None
+    assert room_from_state_key("Living Room Sound Bar.Audio Zone 1.IsMuted") is None
+    assert (
+        room_from_state_key(
+            "Living Room Sound Bar.AVB Stream 2.CurrentVolume",
+            {"Living Room Sound Bar.AVB Stream 2"},
+        )
+        is None
+    )
     assert room_from_state_key("HVAC Controller.HVAC_controller.ThermostatMode_1") is None
     assert room_from_state_key("global.CurrentTemperature") is None
 
@@ -472,13 +548,26 @@ def test_device_recognized_sets_authentication_flag():
     assert client._authentication_required is True
 
 
-def test_device_recognized_without_authentication_marks_session_authorized():
+def test_device_recognized_without_explicit_authorization_remains_unauthorized():
     client = SavantClient("10.0.0.5", 12345)
     client._handle_frame(
         _frame(
             {
                 ENVELOPE_KEY_URI: "session/deviceRecognized",
                 ENVELOPE_KEY_MESSAGES: [{"authentication": False}],
+            }
+        )
+    )
+    assert client.authorized is False
+
+
+def test_device_recognized_can_carry_explicit_authorization():
+    client = SavantClient("10.0.0.5", 12345)
+    client._handle_frame(
+        _frame(
+            {
+                ENVELOPE_KEY_URI: "session/deviceRecognized",
+                ENVELOPE_KEY_MESSAGES: [{"authentication": False, "authorized": True}],
             }
         )
     )

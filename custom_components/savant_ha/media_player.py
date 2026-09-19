@@ -38,9 +38,10 @@ from .const import (
     VERB_SKIP_UP,
     VERB_STOP_REPEAT,
 )
-from .control import audio_zone_logical_component, parse_media_time, zone_state_prefix
+from .control import audio_zone_logical_component, coerce_number, parse_media_time
 from .entity import SavantEntity
 from .hub import SavantHub
+from .savant_client import image_content_type
 
 _SONG = "CurrentSongName"
 _ARTIST = "CurrentArtistName"
@@ -104,20 +105,13 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self._browse_artwork: dict[str, bytes] = {}
         self._music_active = asyncio.Event()
 
-    def _key(self, attr: str) -> str:
-        return f"{zone_state_prefix(self._component, self._logical_component)}{attr}"
-
     def _value(self, attr: str) -> object:
-        # The current host uses an unqualified audio-zone state namespace; retain the
-        # service-qualified state form captured on the original host as a fallback.
-        key = f"{self._component}.{self._logical_component}.{attr}"
-        return self._state(key, self._state(self._key(attr)))
+        return self._state(f"{self._component}.{self._logical_component}.{attr}")
 
     def _handle_coordinator_update(self) -> None:
         # A nonempty room service confirms a later external/native power-on after an
         # optimistic PowerOff. Empty ActiveService is the host's authoritative idle state.
-        active_service = str(self._state(f"{self._room}.ActiveService") or "")
-        if self._service_type == SVC_AV_SAVANTMUSIC and self._is_active_service(active_service):
+        if self._service_type == SVC_AV_SAVANTMUSIC and self._is_active_service():
             self._power_off_requested = False
             self._music_active.set()
         elif self._service_type == SVC_AV_SAVANTMUSIC:
@@ -133,15 +127,17 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     @property
     def state(self) -> MediaPlayerState | None:
         if self._service_type != SVC_AV_SAVANTMUSIC:
-            active_service = str(self._state(f"{self._room}.ActiveService") or "")
-            if active_service:
-                if active_service != self._service_id:
-                    return MediaPlayerState.OFF
+            active_services = self._active_services()
+            if self._service_id in active_services:
                 return self._optimistic_state or MediaPlayerState.ON
+            if active_services:
+                return MediaPlayerState.OFF
             # ASSUMPTION: no Apple TV-specific state has been captured. Retain the last
             # requested state until the room's authoritative ActiveService changes.
             return self._optimistic_state or MediaPlayerState.OFF
-        if self._power_off_requested or self._state(f"{self._room}.ActiveService") == "":
+        if self._power_off_requested:
+            return MediaPlayerState.OFF
+        if self._activity_is_addressable and not self._is_active_service():
             return MediaPlayerState.OFF
         has_media = bool(self._value(_SONG) or self._value(_ARTIST))
         if has_media:
@@ -150,7 +146,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             if self._value(_PAUSED) is True:
                 return MediaPlayerState.PAUSED
             return MediaPlayerState.ON
-        return MediaPlayerState.OFF
+        return self._optimistic_state or MediaPlayerState.OFF
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
@@ -172,11 +168,9 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if VERB_SEEK in self._requests and self._value(_SEEK_DISABLED) is False:
             features |= MediaPlayerEntityFeature.SEEK
         if self._service_type == SVC_AV_SAVANTMUSIC:
-            features |= (
-                MediaPlayerEntityFeature.BROWSE_MEDIA
-                | MediaPlayerEntityFeature.PLAY_MEDIA
-                | MediaPlayerEntityFeature.SEARCH_MEDIA
-            )
+            features |= MediaPlayerEntityFeature.BROWSE_MEDIA | MediaPlayerEntityFeature.SEARCH_MEDIA
+            if self._activity_is_addressable:
+                features |= MediaPlayerEntityFeature.PLAY_MEDIA
         return features
 
     @property
@@ -202,8 +196,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         value = self._state(f"{self._room}.CurrentVolume", self._value("CurrentVolume"))
-        if isinstance(value, (int, float)):
-            return max(0.0, min(1.0, float(value) / _RAW_VOLUME_MAX))
+        if (number := coerce_number(value)) is not None:
+            return max(0.0, min(1.0, number / _RAW_VOLUME_MAX))
         return self._optimistic_volume
 
     @property
@@ -245,7 +239,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             else:
                 self._artwork_key = None
                 self._artwork = None
-        return self._artwork, "image/jpeg" if self._artwork is not None else None
+        return (
+            self._artwork,
+            image_content_type(self._artwork) if self._artwork is not None else None,
+        )
 
     async def _media_request(
         self, request: str, request_args: dict[str, int] | None = None
@@ -258,6 +255,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             logical_component=self._logical_component,
             variant_id=self._variant_id,
             request_args=request_args,
+            include_request_id=True,
         )
 
     async def async_turn_on(self) -> None:
@@ -274,6 +272,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         await self._media_request(VERB_POWER_OFF)
         self._power_off_requested = True
         self._optimistic_state = MediaPlayerState.OFF
+        self._music_active.clear()
         self.async_write_ha_state()
 
     async def async_set_volume_level(self, volume: float) -> None:
@@ -384,7 +383,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node = self._browse_nodes.get(media_id)
         if node is None or node.get("actionType") != "action":
             return
-        if self._is_active_service(str(self._state(f"{self._room}.ActiveService") or "")):
+        if self._is_active_service():
             self._music_active.set()
         if not self._music_active.is_set():
             if VERB_POWER_ON not in self._requests:
@@ -424,7 +423,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             )
             if artwork is not None:
                 self._browse_artwork[artwork_key] = artwork
-        return artwork, "image/jpeg" if artwork is not None else None
+        return artwork, image_content_type(artwork) if artwork is not None else None
 
     def _browse_result(self, result: dict[str, object], title: str) -> BrowseMedia:
         nodes = result.get("nodes")
@@ -452,7 +451,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node_id = uuid.uuid4().hex
         self._browse_nodes[node_id] = node
         browsable = node.get("actionType") == "browsable"
-        playable = node.get("actionType") == "action"
+        playable = node.get("actionType") == "action" and self._activity_is_addressable
         title = str(node.get("title") or node.get("subtitle") or "Savant Music")
         return BrowseMedia(
             media_class=MediaClass.DIRECTORY if browsable else MediaClass.MUSIC,
@@ -476,9 +475,24 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             return False
         return node.get("actionType") in {"browsable", "action"}
 
-    def _is_active_service(self, active_service: str) -> bool:
-        """Return whether the room's active service is this Music endpoint."""
-        return active_service == self._service_id if self._service_id else bool(active_service)
+    def _active_services(self) -> set[str]:
+        """Return exact identifiers from both captured room service states."""
+        services: set[str] = set()
+        for attribute in ("ActiveService", "ActiveServices"):
+            value = self._state(f"{self._room}.{attribute}")
+            if isinstance(value, str):
+                services.update(part.strip() for part in value.split(",") if part.strip())
+        return services
+
+    @property
+    def _activity_is_addressable(self) -> bool:
+        """Whether room activity can identify this exact configured service."""
+        return bool(self._room and self._service_id)
+
+    def _is_active_service(self) -> bool:
+        """Return whether this endpoint is active in either room service state."""
+        services = self._active_services()
+        return self._service_id in services if self._service_id else bool(services)
 
 
 def _discovered_zones(hub: SavantHub) -> set[int]:

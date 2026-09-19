@@ -90,8 +90,24 @@ class SavantHub:
             for device in self.devices:
                 if device.get("room"):
                     self.rooms.add(device["room"])
+        self._non_room_state_prefixes = {
+            f"{device['component']}.{device['zone']}"
+            for device in self.devices or []
+            if device.get("type") == "media_player"
+            and device.get("component")
+            and device.get("zone")
+        }
 
-        subscribe_keys = build_default_subscribe_keys(list(self.rooms))
+        has_archive_inventory = bool(
+            self.devices
+            and any(
+                device.get("state_name") or device.get("component")
+                for device in self.devices
+            )
+        )
+        subscribe_keys = build_default_subscribe_keys(
+            list(self.rooms), include_legacy_defaults=not has_archive_inventory
+        )
         if self.devices is not None:
             for device in self.devices:
                 subscribe_keys.extend(device_state_keys(device))
@@ -104,7 +120,11 @@ class SavantHub:
                     == SVC_AV_SAVANTMUSIC
                 ):
                     subscribe_keys.extend(
-                        audio_zone_state_keys(device["component"], device["zone"])
+                        audio_zone_state_keys(
+                            device["component"],
+                            device["zone"],
+                            str(device["control"].get("variant_id") or "1"),
+                        )
                     )
 
         async def _async_mdns_hosts() -> list[str]:
@@ -165,7 +185,7 @@ class SavantHub:
         self.states[state] = value
         # Derive new rooms from per-room state keys and subscribe to their other keys
         # (PROTOCOL.md §6.1: rooms are the first segments of per-room keys).
-        room = room_from_state_key(state)
+        room = room_from_state_key(state, self._non_room_state_prefixes)
         if room and room not in self.rooms:
             self._on_rooms_discovered({room})
         self._schedule_flush()

@@ -18,15 +18,7 @@ LOGGER = logging.getLogger(__package__)
 
 
 def new_uid() -> str:
-    """Generate a client device UID.
-
-    The host ignores ``devicePresent`` when the client ``uid`` is UUID-shaped (i.e.
-    contains a 32-hex-character substring such as ``uuid4().hex``) — it treats such a
-    uid as a returning device and waits for a ``hostToken`` instead of answering
-    ``deviceRecognized``.  A clearly non-UUID uid (a prefix plus a short hex suffix) is
-    accepted as a fresh device (verified live against the host).  ``uid`` is otherwise
-    unvalidated (PROTOCOL.md §4.9).
-    """
+    """Generate the stable client identifier persisted with a config entry."""
     return "homeassistant-" + uuid.uuid4().hex[:16]
 
 
@@ -40,7 +32,7 @@ CONF_CLOUD_TOKEN = "cloud_token"  # optional; observed key in devicePresent
 CONF_CONFIGURATION_ID = "configuration_id"  # optional; observed key in devicePresent
 CONF_HOST_TOKEN = "host_token"  # optional; explicit session hostToken
 CONF_HOME_ID = "home_id"  # discovered from the 9101 control record
-CONF_UID = "uid"  # generated client device UUID
+CONF_UID = "uid"  # generated stable client identifier
 CONF_NAME = "name"  # discovered host name
 CONF_ROOMS = "rooms"  # user-supplied room names (list[str])
 CONF_DEVICES = "devices"  # user-approved device list (list[dict]) from the picker step
@@ -69,7 +61,7 @@ DISCOVERY_PORT_PRESENCE = 9103  # _presence_.ws
 DISCOVERY_SERVICE_CONTROL = "_control_.ws"
 DISCOVERY_SERVICE_PRESENCE = "_presence_.ws"
 
-# Envelope keys present on every message (PROTOCOL.md §2).
+# Observed envelope keys; host maps and some client variants omit uid/user (PROTOCOL.md §2).
 ENVELOPE_KEY_MESSAGES = "messages"
 ENVELOPE_KEY_URI = "URI"
 ENVELOPE_KEY_UID = "uid"
@@ -92,8 +84,6 @@ URI_DASHBOARD_REQUEST = "dis/dashboard/request"
 URI_USER_DATA_REGISTER = "dis/userData/register"
 URI_FEATURE_LOCK = "featureLock"
 
-# Dashboard RPC verb that returns the scene list (which embeds room names).
-DASHBOARD_REQUEST_SCENES = "GetAVAutomationScenes"
 # Native clients register this dashboard state before the main state subscription
 # (PROTOCOL.md §3; sibling PROTOCOL.md §6.7).
 DASHBOARD_STATE_RECENT_SERVICES = "RecentServices"
@@ -130,9 +120,7 @@ VERB_HVAC_MODE_AUTO = "SetHVACModeAuto"
 VERB_HVAC_MODE_COOL = "SetHVACModeCool"
 VERB_HVAC_MODE_HEAT = "SetHVACModeHeat"
 VERB_HVAC_MODE_OFF = "SetHVACModeOff"
-VERB_FAN_MODE_AUTO = "SetFanModeAuto"
-VERB_FAN_MODE_CYCLE = "SetFanModeCycle"
-VERB_FAN_MODE_ON = "SetFanModeOn"
+VERB_FAN_MODE_ON = "SetFanModeOn"  # Captured one-way setter; not exposed as HA control.
 
 # ---- Component/service-type scopes (PROTOCOL.md §6) -----------------------
 SVC_AV_SAVANTMUSIC = "SVC_AV_SAVANTMUSIC"
@@ -155,10 +143,9 @@ ROOM_CURRENT_TEMPERATURE = "RoomCurrentTemperature"
 ROOM_SHADES_OPEN = "RoomShadesAreOpen"
 ROOM_FANS_ON = "RoomFansAreOn"
 
-# The full observed set of per-room attributes (PROTOCOL.md §6.1).  A room name is the
-# *first* dotted segment of any state key whose *second* segment is one of these — there
-# is no dedicated "get rooms" endpoint, so the room list is derived from these keys and
-# from scene definitions (§6.1).
+# The full observed set of per-room attributes (PROTOCOL.md §6.1). There is no dedicated
+# "get rooms" endpoint, so room names are recovered by stripping one of these known
+# suffixes from the right and are supplemented by scene definitions (§6.1).
 ROOM_ATTRIBUTES = (
     "ActiveService",
     "ActiveServices",
@@ -167,28 +154,45 @@ ROOM_ATTRIBUTES = (
     "IsMuted",
     "RelativeVolumeOnly",
     "RoomLightsAreOn",
+    "RoomNumberOfLightsOn",
     "BrightnessLevel",
     "RoomFansAreOn",
     "RoomShadesAreOpen",
+    "RoomNumberOfShadesOpen",
+    "ShadeLevel",
+    "ShadeSummary",
+    "ShadeLevelIsValid",
+    "ActiveAudioService",
+    "GroupVolume",
+    "CurrentStreamingService",
+    "CurrentStreamingServiceVisible",
     "RoomCurrentTemperature",
     "SleepTimerActive",
     "SleepTimerRemainingTime",
 )
 
 
-def room_from_state_key(key: str) -> str | None:
+def room_from_state_key(
+    key: str, non_room_prefixes: set[str] | None = None
+) -> str | None:
     """Return the room name for a per-room state key, else ``None``.
 
-    A room is the first dotted segment ``R`` of any key whose second segment is a
-    per-room attribute (PROTOCOL.md §6.1), e.g. ``Living Room.RoomCurrentTemperature``
-    -> ``"Living Room"``.
+    A room is the prefix before a known per-room attribute (PROTOCOL.md §6.1), e.g.
+    ``Living.Room.RoomCurrentTemperature`` -> ``"Living.Room"``. Audio-zone logical
+    components share a few attribute names and are not rooms.
     """
     if "." not in key:
         return None
-    first, rest = key.split(".", 1)
-    second = rest.split(".", 1)[0]
-    if second in ROOM_ATTRIBUTES:
-        return first
+    for attribute in ROOM_ATTRIBUTES:
+        suffix = f".{attribute}"
+        if key.endswith(suffix):
+            room = key[: -len(suffix)]
+            if non_room_prefixes and room in non_room_prefixes:
+                return None
+            logical = room.rsplit(".", 1)[-1]
+            if logical.startswith("Audio Zone ") and logical[11:].isdigit():
+                return None
+            return room or None
     return None
 
 
@@ -255,7 +259,6 @@ HVAC_STATE_ATTRIBUTES = (
 
 # Audio-zone attributes observed in live captures (sibling PROTOCOL.md §6.2).
 MUSIC_ZONE_ATTRIBUTES = (
-    "ZonesActiveIn",
     "CurrentSongName",
     "CurrentArtistName",
     "CurrentAlbumName",
@@ -294,36 +297,40 @@ GLOBAL_STATE_KEYS = (
 DEFAULT_MUSIC_ZONES = 2
 
 
-def build_default_subscribe_keys(rooms: list[str] | None = None) -> list[str]:
+def build_default_subscribe_keys(
+    rooms: list[str] | None = None, *, include_legacy_defaults: bool = True
+) -> list[str]:
     """Return the default dotted state keys to subscribe to.
 
     ``rooms`` are user-supplied room names (optional); additional rooms are discovered
     at runtime from scene definitions and state keys (PROTOCOL.md §6.1).
     """
-    keys: list[str] = [
-        f"{HVAC_STATE_PREFIX}{attr}{HVAC_UNIT_SUFFIX}" for attr in HVAC_STATE_ATTRIBUTES
-    ]
-    for zone in range(1, DEFAULT_MUSIC_ZONES + 1):
-        keys.extend(audio_zone_state_keys("Music", f"Audio Zone {zone}"))
+    keys: list[str] = []
+    if include_legacy_defaults:
+        keys.extend(
+            f"{HVAC_STATE_PREFIX}{attr}{HVAC_UNIT_SUFFIX}" for attr in HVAC_STATE_ATTRIBUTES
+        )
+        for zone in range(1, DEFAULT_MUSIC_ZONES + 1):
+            keys.extend(audio_zone_state_keys("Music", f"Audio Zone {zone}"))
     keys.extend(GLOBAL_STATE_KEYS)
     keys.extend(room_state_keys(set(rooms or [])))
     return keys
 
 
-def audio_zone_state_keys(component: str, logical_component: str) -> list[str]:
+def audio_zone_state_keys(
+    component: str, logical_component: str, variant_id: str = "1"
+) -> list[str]:
     """Return state keys for one archive-derived music endpoint.
 
     The configuration archive identifies an endpoint by both its component and logical
     component. Audio Zone numbers are only unique within a component (PROTOCOL.md §13).
     """
-    # The original capture used the service-qualified form, while the current host
-    # publishes ``<component>.<logicalComponent>.<attr>`` (sibling PROTOCOL.md §6.2).
-    # Register both observed shapes; unknown keys are ignored by the host.
-    prefixes = (
-        f"{component}.{logical_component}.",
-        f"{component}.{logical_component}.{SVC_AV_SAVANTMUSIC}.",
-    )
-    return [f"{prefix}{attr}" for prefix in prefixes for attr in MUSIC_ZONE_ATTRIBUTES]
+    # Ordinary media state is component/logical/attribute. ZonesActiveIn is the
+    # separately captured service-qualified membership state (sibling PROTOCOL.md §6.2).
+    prefix = f"{component}.{logical_component}."
+    return [f"{prefix}{attr}" for attr in MUSIC_ZONE_ATTRIBUTES] + [
+        f"{prefix}{variant_id}.{SVC_AV_SAVANTMUSIC}.ZonesActiveIn"
+    ]
 
 
 def device_state_keys(device: dict[str, Any]) -> list[str]:
@@ -346,9 +353,8 @@ def device_state_keys(device: dict[str, Any]) -> list[str]:
 # ---- Defaults --------------------------------------------------------------
 # Identity values sent in devicePresent.  The device block is NOT validated by the
 # host: the reverse-engineering repo's login test tool authenticated successfully with
-# make/app/name "login_test" and model/OS/type "cli".  ``UID`` is a freshly generated
-# per-install UUID; ``homeId`` is likewise unvalidated for local login (PROTOCOL.md
-# §4.9 of the sibling repo).
+# make/app/name "login_test" and model/OS/type "cli". ``UID`` is generated once and
+# persisted; ``homeId`` is likewise unvalidated for local login (sibling PROTOCOL.md §4.1).
 DEVICE_MAKE = "Home Assistant"
 DEVICE_APP = "savant_ha"
 DEVICE_MODEL = "Home Assistant"

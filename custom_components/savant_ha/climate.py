@@ -23,9 +23,6 @@ from .const import (
     DEVICE_TYPE_CLIMATE,
     DOMAIN,
     HVAC_STATE_PREFIX,
-    VERB_FAN_MODE_AUTO,
-    VERB_FAN_MODE_CYCLE,
-    VERB_FAN_MODE_ON,
     VERB_HVAC_MODE_AUTO,
     VERB_HVAC_MODE_COOL,
     VERB_HVAC_MODE_HEAT,
@@ -65,24 +62,15 @@ _MODE_VERBS = {
     HVACMode.AUTO: VERB_HVAC_MODE_AUTO,
 }
 
-_FAN_MODE_VERBS = {
-    _FAN_MODE_AUTO: VERB_FAN_MODE_AUTO,
-    _FAN_MODE_CYCLE: VERB_FAN_MODE_CYCLE,
-    _FAN_MODE_ON: VERB_FAN_MODE_ON,
-}
-
-
 class SavantClimate(SavantEntity, ClimateEntity):
     """A single HVAC controller (unit index)."""
 
-    # ASSUMPTION: temperature units are Fahrenheit — matches the observed
-    # ``SchedulerSettings`` record (TemperatureScale:"Fahrenheit"); not otherwise
-    # confirmed on the wire (PROTOCOL.md §5.4).
+    # Legacy records lack archive scale metadata and retain the original Fahrenheit
+    # fallback. New imports override this from HVACEntities.isCelsius.
     _attr_temperature_unit = UnitOfTemperature.FAHRENHEIT
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-        | ClimateEntityFeature.FAN_MODE
     )
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.COOL, HVACMode.HEAT, HVACMode.AUTO]
     _attr_fan_modes = [_FAN_MODE_AUTO, _FAN_MODE_CYCLE, _FAN_MODE_ON]
@@ -98,6 +86,12 @@ class SavantClimate(SavantEntity, ClimateEntity):
             area=device.get("area", ""),
         )
         self._addresses = device.get("addresses", "")
+        control = device.get("control")
+        control = control if isinstance(control, dict) else {}
+        self._has_auto_range = False
+        # Old entries persisted an environmental zone name here. Only new archive
+        # records explicitly mark an unambiguous physical-room scope as safe to send.
+        self._zone = str(control.get("zone_scope") or "")
         (
             self._state_prefix,
             self._suffix,
@@ -109,6 +103,33 @@ class SavantClimate(SavantEntity, ClimateEntity):
             # CoolMaster state is captured, but its multi-address control payload is unknown.
             self._attr_hvac_modes = []
             self._attr_supported_features = ClimateEntityFeature(0)
+        elif control:
+            self._attr_hvac_modes = [HVACMode.OFF]
+            for field, mode in (
+                ("cool", HVACMode.COOL),
+                ("heat", HVACMode.HEAT),
+                ("auto", HVACMode.AUTO),
+            ):
+                if control.get(field):
+                    self._attr_hvac_modes.append(mode)
+            features = ClimateEntityFeature(0)
+            if any(mode in self._attr_hvac_modes for mode in (HVACMode.COOL, HVACMode.HEAT)):
+                features |= ClimateEntityFeature.TARGET_TEMPERATURE
+            setpoint_count = coerce_number(control.get("temperatureSetPoints"))
+            self._has_auto_range = bool(
+                HVACMode.AUTO in self._attr_hvac_modes
+                and setpoint_count is not None
+                and setpoint_count >= 2
+            )
+            if self._has_auto_range:
+                features |= ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+            self._attr_supported_features = features
+            if control.get("isCelsius"):
+                self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+            if (minimum := coerce_number(control.get("tempMinRange"))) is not None:
+                self._attr_min_temp = minimum
+            if (maximum := coerce_number(control.get("tempMaxRange"))) is not None:
+                self._attr_max_temp = maximum
         self._attr_unique_id = f"{hub.uid}_climate_{device['id']}"
 
     # ------------------------------------------------------------ state keys
@@ -117,7 +138,7 @@ class SavantClimate(SavantEntity, ClimateEntity):
         return f"{self._state_prefix}{attr}{self._suffix}"
 
     def _scope(self) -> dict[str, str]:
-        return climate_scope(self._component, self._logical_component)
+        return climate_scope(self._component, self._logical_component) | {"zone": self._zone}
 
     def _thermostat_args(self) -> dict[str, Any]:
         return thermostat_args(self._addresses, self._suffix)
@@ -129,6 +150,17 @@ class SavantClimate(SavantEntity, ClimateEntity):
         return bool(self._state(self._key(attr)))
 
     # ------------------------------------------------------------ ClimateEntity
+
+    @property
+    def supported_features(self) -> ClimateEntityFeature:
+        features = self._attr_supported_features
+        if self.hvac_mode == HVACMode.AUTO:
+            return (
+                features & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+                if self._has_auto_range
+                else ClimateEntityFeature(0)
+            )
+        return features & ~ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
 
     @property
     def current_temperature(self) -> float | None:
@@ -176,7 +208,7 @@ class SavantClimate(SavantEntity, ClimateEntity):
         value = self._state(self._key("ThermostatFanMode"))
         if self._is_coolmaster and isinstance(value, str) and value:
             return value.lower()
-        if isinstance(value, str) and value.lower() in _FAN_MODE_VERBS:
+        if isinstance(value, str) and value.lower() in self._attr_fan_modes:
             return value.lower()
         for mode, flag in (
             (_FAN_MODE_AUTO, "IsThermostatCurrentFanModeAuto"),
@@ -198,17 +230,6 @@ class SavantClimate(SavantEntity, ClimateEntity):
             **self._scope(),
         )
 
-    async def async_set_fan_mode(self, fan_mode: str) -> None:
-        if self._is_coolmaster:
-            return
-        verb = _FAN_MODE_VERBS.get(fan_mode.lower())
-        if verb is not None:
-            await self._service_request(
-                verb,
-                request_args=self._thermostat_args(),
-                **self._scope(),
-            )
-
     async def async_set_temperature(self, **kwargs: Any) -> None:
         if self._is_coolmaster:
             return
@@ -217,18 +238,20 @@ class SavantClimate(SavantEntity, ClimateEntity):
         if low is not None or high is not None:
             if low is not None:
                 args = self._thermostat_args()
-                args["HeatPointTemperature"] = low
+                args["HeatPointTemperature"] = float(low)
                 await self._service_request(
                     VERB_SET_HEAT_POINT,
                     request_args=args,
+                    include_request_id=True,
                     **self._scope(),
                 )
             if high is not None:
                 args = self._thermostat_args()
-                args["CoolPointTemperature"] = high
+                args["CoolPointTemperature"] = float(high)
                 await self._service_request(
                     VERB_SET_COOL_POINT,
                     request_args=args,
+                    include_request_id=True,
                     **self._scope(),
                 )
             return
@@ -237,18 +260,23 @@ class SavantClimate(SavantEntity, ClimateEntity):
             return
         args = self._thermostat_args()
         mode = self.hvac_mode
+        if mode == HVACMode.AUTO:
+            # Only separate captured heat/cool setters are known for Auto mode.
+            return
         if mode == HVACMode.COOL:
-            args["CoolPointTemperature"] = temperature
+            args["CoolPointTemperature"] = float(temperature)
             await self._service_request(
                 VERB_SET_COOL_POINT,
                 request_args=args,
+                include_request_id=True,
                 **self._scope(),
             )
         else:
-            args["HeatPointTemperature"] = temperature
+            args["HeatPointTemperature"] = float(temperature)
             await self._service_request(
                 VERB_SET_HEAT_POINT,
                 request_args=args,
+                include_request_id=True,
                 **self._scope(),
             )
 
@@ -267,8 +295,7 @@ def _build_entities(hub: SavantHub) -> list[SavantClimate]:
         climate_devices = [
             d for d in hub.devices if d.get("type") == DEVICE_TYPE_CLIMATE
         ]
-        # ASSUMPTION: the Nth thermostat maps to state suffix "_<N>" (ThermostatAddress
-        # "<N>"); the exact per-entity unit index is not in the documented schema.
+        # Legacy records without stateName retain the historical index fallback.
         return [
             SavantClimate(hub, device, f"_{index + 1}")
             for index, device in enumerate(climate_devices)

@@ -5,9 +5,9 @@ the state bus (PROTOCOL.md §13 of the sibling repo):
 
     URI: session/fileDownload   messages: [{ "filePath": "uiconfig.tar.gz" }]
 
-The host replies with a sequence of WebSocket **binary** frames carrying a *framed gzip
-archive* (not msgpack).  ``uiconfig.tar.gz`` is a gzip'd tar whose members include
-``serviceImplementation.sqlite`` — the complete system model (39 tables).
+The host replies with a shared framed binary transfer (parsed by ``savant_client``).
+The completed body is a gzip'd tar whose members include
+``serviceImplementation.sqlite`` — the complete system model (38 tables and one view).
 
 The device model here is driven by introspection (``PRAGMA table_info`` / ``sqlite_master``)
 rather than hard-coded column names, because the exact schema varies per host.  The
@@ -26,11 +26,6 @@ from typing import Any
 
 from .const import LOGGER
 
-# Frame flags in the framed archive (PROTOCOL.md §13).
-_ARCHIVE_MARKER = 0x01
-_ARCHIVE_DATA = 0x01
-_ARCHIVE_FINAL = 0x81
-
 # The member of the tar we care about.
 _SQLITE_MEMBER = "serviceImplementation.sqlite"
 
@@ -40,8 +35,6 @@ _ENTITY_TABLE_TYPES = {
     "Shade": "cover",
     "Fan": "fan",
     "HVAC": "climate",
-    "DoorLock": "lock",
-    "Garage": "cover",
 }
 
 
@@ -68,27 +61,6 @@ class SavantDevice:
 
         base = f"{self.device_type}|{self.name}|{self.addresses}|{self.state_name}|{self.room}"
         return hashlib.sha1(base.encode()).hexdigest()[:16]
-
-
-def reassemble_archive(frames: list[bytes]) -> bytes:
-    """Reassemble the framed gzip archive from raw WS binary frames (PROTOCOL.md §13).
-
-    Frame layout: byte 0 = 0x01; byte 1 = 0x01 (data) / 0x81 (final); bytes 2-7
-    reserved; bytes 8-9 = total gzip length (BE uint16); bytes 10-12 reserved;
-    byte 13 = filename length; then the filename; then the gzip bytes.
-    """
-    parts: list[bytes] = []
-    for frame in frames:
-        if len(frame) < 14 or frame[0] != _ARCHIVE_MARKER:
-            continue
-        flag = frame[1]
-        filename_len = frame[13]
-        data = frame[14 + filename_len :]
-        if data:
-            parts.append(data)
-        if flag == _ARCHIVE_FINAL:
-            break
-    return b"".join(parts)
 
 
 def parse_archive(gz_bytes: bytes) -> list[SavantDevice]:
@@ -174,6 +146,13 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")
     ]
 
+    rooms = {row[0]: str(row[1] or "") for row in conn.execute("SELECT id, name FROM Rooms")}
+    zone_rooms: dict[Any, set[str]] = {}
+    if "ZoneRoomMap" in tables:
+        for zone_id, room_id in conn.execute("SELECT zoneID, roomID FROM ZoneRoomMap"):
+            if room := rooms.get(room_id):
+                zone_rooms.setdefault(zone_id, set()).add(room)
+
     entity_tables = [t for t in tables if t.endswith("Entities")]
     LOGGER.debug(
         "Savant uiconfig entity tables: %s",
@@ -181,10 +160,10 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
     )
 
     def _room_for(zone_id: Any) -> str:
-        # The Environmental zone's name IS the room name (one zone per room per service,
-        # e.g. "Office", "Dining Room").  ZoneRoomMap is NOT usable here — HVAC zones are
-        # shared across every room (many-to-many), so a 1:1 zone->room map is wrong.
-        return zones.get(zone_id, ("", "", "", ""))[0]
+        # Suggest an area only when configuration has one unambiguous physical room.
+        # Broad HVAC associations must not create areas from environmental-zone labels.
+        associated = zone_rooms.get(zone_id, set())
+        return next(iter(associated)) if len(associated) == 1 else ""
 
     devices: list[SavantDevice] = []
     for table in sorted(tables):
@@ -210,41 +189,94 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
             # entityType "Scene" (often CurrentLEDState/IsSceneActive), not a
             # controllable lighting load, so importing them creates misleading entries
             # such as "AUX B" and "CCW" (PROTOCOL.md §13.2).
-            if device_type == "light" and str(d.get(entity_type_col) or "") == "Scene":
+            if device_type == "light" and str(d.get(entity_type_col) or "") in {
+                "Scene",
+                "Switch",
+            }:
+                continue
+            state_name = str(d.get(state_col) or "") if state_col else ""
+            addresses = str(d.get(addr_col) or "") if addr_col else ""
+            configured_commands = [
+                str(d.get(column) or "")
+                for name in ("pressCommand", "dimmerCommand")
+                if (column := _pick(cols, (name,)))
+            ]
+            configured_command = next(
+                (
+                    command
+                    for command in configured_commands
+                    if command in {"ShadeSet", "RFShadeSet"}
+                ),
+                next((command for command in configured_commands if command), ""),
+            )
+            if device_type == "light" and (
+                not addresses
+                or not state_name
+                or not any(
+                    marker in state_name
+                    for marker in ("CurrentDimmerLevel_", "CurrentColor_", "CurrentBleColor_", ".DimmerLevel_")
+                )
+            ):
+                continue
+            if device_type == "cover" and (
+                not addresses
+                or not any(marker in state_name for marker in ("ShadeLevel_", ".DimmerLevel_"))
+                or (
+                    ".DimmerLevel_" in state_name
+                    and configured_command != "RFShadeSet"
+                )
+                or (
+                    "ShadeLevel_" in state_name
+                    and configured_command not in {"", "ShadeSet"}
+                )
+            ):
                 continue
             zone_id = d.get(zone_col) if zone_col else None
+            room = _room_for(zone_id) if zone_id is not None else ""
+            extra: dict[str, Any] = {}
+            if device_type == "light":
+                extra = {
+                    "entity_type": str(d.get(entity_type_col) or ""),
+                    "dimmer_command": str(d.get(_pick(cols, ("dimmerCommand",))) or ""),
+                    "fade_time": d.get(_pick(cols, ("fadeTime",))),
+                    "delay_time": d.get(_pick(cols, ("delayTime",))),
+                    "technology": str(d.get(_pick(cols, ("technology",))) or ""),
+                }
+            elif device_type == "cover":
+                extra = {
+                    "fade_time": d.get(_pick(cols, ("fadeTime",))),
+                    "delay_time": d.get(_pick(cols, ("delayTime",))),
+                    "preset_number": d.get(_pick(cols, ("presetNumber",))),
+                    "scene_number": d.get(_pick(cols, ("sceneNumber",))),
+                    "shade_command": str(
+                        configured_command
+                    ),
+                }
+            elif device_type == "climate":
+                for key in (
+                    "heat",
+                    "cool",
+                    "auto",
+                    "temperatureSetPoints",
+                    "tempMinRange",
+                    "tempMaxRange",
+                    "tempBuffer",
+                    "isCelsius",
+                ):
+                    if column := _pick(cols, (key,)):
+                        extra[key] = d.get(column)
+                if room:
+                    extra["zone_scope"] = room
             devices.append(
                 SavantDevice(
                     device_type=device_type,
                     name=name,
-                    room=_room_for(zone_id) if zone_id is not None else "",
+                    room=room,
                     entity_id=f"{device_type}:{d.get('id')}",
-                    addresses=str(d.get(addr_col) or "") if addr_col else "",
-                    state_name=str(d.get(state_col) or "") if state_col else "",
-                    zone=zones.get(zone_id, ("", "", "", ""))[0] if zone_id is not None else "",
-                    extra=(
-                        {
-                            "entity_type": str(d.get(entity_type_col) or ""),
-                            "dimmer_command": str(d.get(_pick(cols, ("dimmerCommand",))) or ""),
-                            "fade_time": d.get(_pick(cols, ("fadeTime",))),
-                            "delay_time": d.get(_pick(cols, ("delayTime",))),
-                            "technology": str(d.get(_pick(cols, ("technology",))) or ""),
-                        }
-                        if device_type == "light"
-                        else (
-                            {
-                                "fade_time": d.get(_pick(cols, ("fadeTime",))),
-                                "delay_time": d.get(_pick(cols, ("delayTime",))),
-                                "preset_number": d.get(_pick(cols, ("presetNumber",))),
-                                "scene_number": d.get(_pick(cols, ("sceneNumber",))),
-                                "shade_command": str(
-                                    d.get(_pick(cols, ("pressCommand", "dimmerCommand"))) or ""
-                                ),
-                            }
-                            if device_type == "cover"
-                            else {}
-                        )
-                    ),
+                    addresses=addresses,
+                    state_name=state_name,
+                    zone=room,
+                    extra=extra,
                 )
             )
 

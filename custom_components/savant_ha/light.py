@@ -2,8 +2,8 @@
 
 Each ``LightEntities`` row in ``serviceImplementation.sqlite`` is a single load with an
 ``addresses`` field (the ``DimmerSet`` ``Address*`` args) and a ``stateName`` field (the
-per-load dimmer/colour state key).  Loads without those fields fall back to room-level
-on/off via ``__RoomSetBrightness`` (PROTOCOL.md §6).
+per-load dimmer/colour state key). Legacy room entities use ``__RoomSetBrightness``;
+configured loads require their exact per-load state and captured ``DimmerSet`` shape.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from .control import (
     dimmer_command,
     is_color_light,
     is_switch,
-    light_address_args,
     parse_light_color,
     parse_light_state,
     state_name_component,
@@ -91,9 +90,6 @@ class SavantLight(SavantEntity, LightEntity):
     def _logical_component(self) -> str:
         return state_name_logical(self._state_name)
 
-    def _address_args(self) -> dict[str, Any]:
-        return light_address_args(self._addresses)
-
     def _dimmer_args(
         self,
         level: int,
@@ -115,13 +111,16 @@ class SavantLight(SavantEntity, LightEntity):
         return on, brightness
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         real_on, _ = self._parsed_state()
         if real_on is not None:
             return real_on
         if self._assumed_on is not None:
             return self._assumed_on
-        return bool(self._state(f"{self._room}.{ROOM_LIGHTS_ON}"))
+        if not self._state_name:
+            value = self._state(f"{self._room}.{ROOM_LIGHTS_ON}")
+            return value if isinstance(value, bool) else None
+        return None
 
     @property
     def brightness(self) -> int | None:
@@ -132,10 +131,11 @@ class SavantLight(SavantEntity, LightEntity):
             return real_brightness
         if self._assumed_brightness is not None:
             return self._assumed_brightness
-        level = self._state(f"{self._room}.{ROOM_BRIGHTNESS}")
-        if isinstance(level, (int, float)):
-            return max(0, min(255, int(float(level) / 100 * 255)))
-        return 255 if self.is_on else 0
+        if not self._state_name:
+            level = self._state(f"{self._room}.{ROOM_BRIGHTNESS}")
+            if isinstance(level, (int, float)):
+                return max(0, min(255, int(float(level) / 100 * 255)))
+        return None
 
     @property
     def rgbw_color(self) -> tuple[int, int, int, int] | None:
@@ -147,16 +147,6 @@ class SavantLight(SavantEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         if self._is_switch:
-            await self._service_request(
-                "SwitchOn",
-                component=self._component(),
-                service_type=SVC_ENV_LIGHTING,
-                zone=self._room,
-                logical_component=self._logical_component(),
-                request_args=self._address_args(),
-            )
-            self._assumed_on = True
-            self.async_write_ha_state()
             return
         brightness = kwargs.get("brightness")
         if self._state_name and self._addresses:
@@ -192,26 +182,17 @@ class SavantLight(SavantEntity, LightEntity):
             return
         await self._service_request(
             VERB_ROOM_BRIGHTNESS,
-            component=self._component(),
+            component=None,
             service_type=SVC_ENV_LIGHTING,
             zone=self._room,
-            request_args={"BrightnessLevel": 100},
+            logical_component=None,
+            request_args={"BrightnessLevel": 100, "useLastDimmerValue": True},
         )
         self._assumed_on = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         if self._is_switch:
-            await self._service_request(
-                "SwitchOff",
-                component=self._component(),
-                service_type=SVC_ENV_LIGHTING,
-                zone=self._room,
-                logical_component=self._logical_component(),
-                request_args=self._address_args(),
-            )
-            self._assumed_on = False
-            self.async_write_ha_state()
             return
         if self._state_name and self._addresses:
             self._parsed_state()  # Retain the current host state before it reports level zero.
@@ -232,10 +213,11 @@ class SavantLight(SavantEntity, LightEntity):
             return
         await self._service_request(
             VERB_ROOM_BRIGHTNESS,
-            component=self._component(),
+            component=None,
             service_type=SVC_ENV_LIGHTING,
             zone=self._room,
-            request_args={"BrightnessLevel": 0},
+            logical_component=None,
+            request_args={"BrightnessLevel": 0, "useLastDimmerValue": True},
         )
         self._assumed_on = False
         self.async_write_ha_state()
@@ -246,7 +228,7 @@ def _build_entities(hub: SavantHub) -> list[SavantLight]:
         return [
             SavantLight(hub, device)
             for device in hub.devices
-            if device.get("type") == DEVICE_TYPE_LIGHT
+            if device.get("type") == DEVICE_TYPE_LIGHT and not is_switch(device)
         ]
     # Legacy fallback: one room-level light per room that reports lighting.
     return [
