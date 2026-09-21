@@ -41,7 +41,7 @@ from .const import (
 from .control import audio_zone_logical_component, coerce_number, parse_media_time
 from .entity import SavantEntity
 from .hub import SavantHub
-from .savant_client import image_content_type
+from .savant_client import SavantError, image_content_type
 
 _SONG = "CurrentSongName"
 _ARTIST = "CurrentArtistName"
@@ -55,6 +55,7 @@ _ARTWORK = "CurrentArtworkPath"
 _RAW_VOLUME_MAX = 50  # PROTOCOL.md §5.4 / sibling PROTOCOL.md §6.1, §7.2.
 _MUSIC_POWER_TIMEOUT = 5.0
 _NON_MEDIA_ROOT_TITLES = frozenset({"settings", "savant music", "select server"})
+_SEARCH_NODE_ID = "savant-search"
 
 
 class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
@@ -330,13 +331,27 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         """Return the capture-backed Savant Music folder tree (sibling PROTOCOL.md §8.3)."""
         if self._service_type != SVC_AV_SAVANTMUSIC:
             raise BrowseError("Savant media browsing is available only for Savant Music")
+        if media_content_id == _SEARCH_NODE_ID:
+            return BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=_SEARCH_NODE_ID,
+                media_content_type=MediaType.MUSIC,
+                title="Search Savant Music",
+                can_play=False,
+                can_expand=True,
+                can_search=True,
+                children=[],
+            )
         if media_content_id is None:
             self._browse_nodes.clear()
             self._browse_artwork.clear()
-            result = await self.hub.client.async_browse_music(
-                self._component, self._logical_component, operation="getRoot"
-            )
-            return self._browse_result(result, "Savant Music")
+            try:
+                result = await self.hub.client.async_browse_music(
+                    self._component, self._logical_component, operation="getRoot"
+                )
+            except (SavantError, ValueError) as err:
+                raise BrowseError(str(err) or "Savant media browsing failed") from err
+            return self._browse_result(result, "Savant Music", include_search=True)
         node = self._browse_nodes.get(media_content_id)
         if node is None:
             raise BrowseError("Savant media item is no longer available; browse again")
@@ -349,7 +364,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
                 result = await self.hub.client.async_browse_music(
                     self._component, self._logical_component, operation="browse", node=node
                 )
-        except ValueError as err:
+        except (SavantError, ValueError) as err:
             raise BrowseError("Savant media item cannot be opened") from err
         return self._browse_result(result, str(node.get("title") or "Savant Music"))
 
@@ -357,12 +372,18 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         """Search captured Savant Music catalogs with the supported all-service scope."""
         if self._service_type != SVC_AV_SAVANTMUSIC:
             raise SearchError("Savant media search is available only for Savant Music")
+        search_term = query.search_query.strip()
+        if not search_term:
+            return SearchMedia(result=[])
+        # The captured endpoint supports only global filter:"all" search. Home Assistant
+        # supplies the current opaque browse ID, but mapping that to a provider filter
+        # would invent uncaptured behavior. Do not advertise media-class filters either.
         try:
             result = await self.hub.client.async_search_music(
-                self._component, self._logical_component, query.search_query
+                self._component, self._logical_component, search_term
             )
-        except ValueError as err:
-            raise SearchError("Savant media search failed") from err
+        except (SavantError, ValueError) as err:
+            raise SearchError(str(err) or "Savant media search failed") from err
         nodes = result.get("nodes")
         return SearchMedia(
             result=[
@@ -388,7 +409,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if not self._music_active.is_set():
             if VERB_POWER_ON not in self._requests:
                 raise HomeAssistantError("Savant Music cannot be turned on for playback")
-            await self.async_turn_on()
+            try:
+                await self.async_turn_on()
+            except SavantError as err:
+                raise HomeAssistantError(str(err)) from err
             try:
                 await asyncio.wait_for(self._music_active.wait(), _MUSIC_POWER_TIMEOUT)
             except TimeoutError as err:
@@ -397,8 +421,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             await self.hub.client.async_follow_music_node(
                 self._component, self._logical_component, node
             )
-        except ValueError:
-            return
+        except (SavantError, ValueError) as err:
+            raise HomeAssistantError(str(err) or "Savant media playback failed") from err
 
     async def async_get_browse_image(
         self,
@@ -425,7 +449,9 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
                 self._browse_artwork[artwork_key] = artwork
         return artwork, image_content_type(artwork) if artwork is not None else None
 
-    def _browse_result(self, result: dict[str, object], title: str) -> BrowseMedia:
+    def _browse_result(
+        self, result: dict[str, object], title: str, *, include_search: bool = False
+    ) -> BrowseMedia:
         nodes = result.get("nodes")
         children = (
             [
@@ -436,6 +462,18 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             if isinstance(nodes, list)
             else []
         )
+        if include_search:
+            children.insert(
+                0,
+                BrowseMedia(
+                    media_class=MediaClass.DIRECTORY,
+                    media_content_id=_SEARCH_NODE_ID,
+                    media_content_type=MediaType.MUSIC,
+                    title="Search Savant Music",
+                    can_play=False,
+                    can_expand=True,
+                ),
+            )
         return BrowseMedia(
             media_class=MediaClass.DIRECTORY,
             media_content_id="root",

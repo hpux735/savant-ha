@@ -632,7 +632,10 @@ class SavantClient:
             ENVELOPE_KEY_USER: DEVICE_TYPE,
         }
         LOGGER.debug("Savant -> %s (%d message(s))", uri, len(messages))
-        await self._ws.send_bytes(_pack(envelope))
+        try:
+            await self._ws.send_bytes(_pack(envelope))
+        except (aiohttp.ClientError, OSError) as err:
+            raise SavantConnectionError("connection lost while sending request") from err
 
     async def _request_music(
         self,
@@ -647,9 +650,12 @@ class SavantClient:
             return
         if self._ws is None or self._ws.closed:
             raise SavantConnectionError("not connected")
-        await self._ws.send_bytes(
-            _pack({ENVELOPE_KEY_MESSAGES: messages, ENVELOPE_KEY_URI: uri})
-        )
+        try:
+            await self._ws.send_bytes(
+                _pack({ENVELOPE_KEY_MESSAGES: messages, ENVELOPE_KEY_URI: uri})
+            )
+        except (aiohttp.ClientError, OSError) as err:
+            raise SavantConnectionError("connection lost while sending request") from err
 
     async def service_request(
         self,
@@ -877,7 +883,7 @@ class SavantClient:
             await self._request_music(uri, [message], include_identity=include_identity)
             return await asyncio.wait_for(future, MUSIC_BROWSE_TIMEOUT)
         except TimeoutError as err:
-            raise SavantError("Savant music browse timed out") from err
+            raise SavantError(f"Savant music {operation} timed out") from err
         finally:
             self._pending_music_requests.pop((uri, request_id), None)
 

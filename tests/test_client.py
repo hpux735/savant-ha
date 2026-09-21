@@ -178,6 +178,26 @@ def test_send_handshake_uses_expected_envelope():
     assert reg_messages == [{"state": "a.b"}]
 
 
+def test_send_failures_are_normalized_as_connection_errors():
+    client = SavantClient("10.0.0.5", 12345)
+
+    class FailingWebSocket:
+        closed = False
+
+        async def send_bytes(self, data):  # noqa: ARG002
+            raise OSError("socket closed")
+
+    client._ws = FailingWebSocket()  # type: ignore[assignment]
+
+    async def run():
+        with pytest.raises(sc.SavantConnectionError, match="connection lost"):
+            await client.request("state/register", [{"state": "a.b"}])
+        with pytest.raises(sc.SavantConnectionError, match="connection lost"):
+            await client._request_music("music/test", [], include_identity=False)
+
+    asyncio.run(run())
+
+
 def test_post_auth_matches_observed_state_startup_order():
     client = SavantClient("10.0.0.5", 12345, subscribe_keys=["a.b"])
     client._authorized = True

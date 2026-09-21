@@ -62,7 +62,7 @@ extra room names) live behind the integration's **Configure** button.
 | Climate | `HVACEntities` | configured captured modes/setpoints and read-only CoolMaster state |
 | Cover | `ShadeEntities` | capture-backed shade open/close and position; stop is not captured |
 | Fan | `FanEntities` | exact per-device state, read-only |
-| Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: browsing/search, playback, now-playing, power, volume, transport, and album art; Apple TV: archive-declared power, volume, and play/pause |
+| Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: browsing, global catalog search, playback, now-playing, power, volume, transport, and album art; Apple TV: archive-declared power, volume, and play/pause |
 | Scene | Savant dashboard `scenesAndFoldersReduced` updates | standalone native `scene.turn_on` activation |
 
 ## Limitations / open questions
