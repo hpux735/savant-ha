@@ -1,0 +1,21 @@
+set_media_server_zones:
+  name: Set media server zones
+  description: Replace the complete selected endpoint set for one shared Savant media server.
+  fields:
+    entity_id:
+      name: Media server endpoint
+      description: A projected Savant media-player entity identifying the physical server.
+      required: true
+      selector:
+        entity:
+          integration: savant_ha
+          domain: media_player
+    zone_entity_ids:
+      name: Selected endpoints
+      description: The complete desired set of projected endpoints for the same server.
+      required: true
+      selector:
+        entity:
+          multiple: true
+          integration: savant_ha
+          domain: media_player

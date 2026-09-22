@@ -254,6 +254,16 @@ key and detect JPEG or PNG from the complete body. Trace-backed music controls a
 After `PowerOff`, the host can retain all metadata, pause, and progress values; use the
 room's exact `ActiveService`/comma-separated `ActiveServices` membership instead.
 
+For Home Assistant topology, canonical zoned-service rows are endpoint projections. The
+physical server identity comes from the row's exact `component` relationship to
+`ZoneConfigComponents` (preferring its stable `uid`/`componentID`/`internalID`), while
+the endpoint zone identity comes from `Rooms.roomID`. The per-room zoned-service `service`
+identifier remains the authoritative membership key in `ActiveService`/`ActiveServices`.
+These archive relationships, not display names, allow several room endpoints to be
+recognized as aliases of one server. The integration uses endpoint `PowerOff` then
+`PowerOn` under a per-server lock for exact route replacement; no whole-route replacement
+verb has been observed.
+
 Music browsing is a same-URI RPC under
 `music/<component>/<logical>/SVC_AV_SAVANTMUSIC/getRoot` and `/browse`. Captured requests
 use `{clientType:"iPhone",limit:50,offset:0,requestId,version:1,node,arguments:null}`;

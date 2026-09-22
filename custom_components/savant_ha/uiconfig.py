@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .const import LOGGER
+from .media_routing import opaque_model_id
 
 # The member of the tar we care about.
 _SQLITE_MEMBER = "serviceImplementation.sqlite"
@@ -146,7 +147,16 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")
     ]
 
-    rooms = {row[0]: str(row[1] or "") for row in conn.execute("SELECT id, name FROM Rooms")}
+    room_cols = _table_columns(conn, "Rooms")
+    room_id_col = _pick(room_cols, ("roomID", "roomId", "room_id"))
+    room_select = f", {room_id_col}" if room_id_col else ""
+    room_rows = list(conn.execute(f"SELECT id, name{room_select} FROM Rooms"))
+    rooms = {row[0]: str(row[1] or "") for row in room_rows}
+    room_ids = {
+        str(row[1] or ""): str(row[2] or "")
+        for row in room_rows
+        if len(row) > 2 and row[1] and row[2]
+    }
     zone_rooms: dict[Any, set[str]] = {}
     if "ZoneRoomMap" in tables:
         for zone_id, room_id in conn.execute("SELECT zoneID, roomID FROM ZoneRoomMap"):
@@ -280,7 +290,7 @@ def _parse_connection(conn: sqlite3.Connection) -> list[SavantDevice]:
                 )
             )
 
-    _parse_media_zones(conn, tables, devices)
+    _parse_media_zones(conn, tables, devices, room_ids)
     return devices
 
 
@@ -295,6 +305,7 @@ def _parse_media_zones(
     conn: sqlite3.Connection,
     tables: list[str],
     devices: list[SavantDevice],
+    room_ids: dict[str, str],
 ) -> None:
     # ServiceImplementationZonedService contains the canonical (pathOrder=0) endpoint
     # for every selectable music source. ServiceResources also contains intermediate
@@ -316,6 +327,7 @@ def _parse_media_zones(
     service_col = _pick(cols, ("service", "serviceID", "service_id"))
     variant_col = _pick(cols, ("serviceVariantID", "serviceVariantId", "variantID"))
     requests = _service_requests(conn, tables)
+    component_ids = _media_component_ids(conn, tables)
     seen: set[str | tuple[str, str, str]] = set()
     cursor = conn.execute(f'SELECT * FROM "{source}"')
     for row in cursor:
@@ -351,9 +363,55 @@ def _parse_media_zones(
                     "service_type": service_type,
                     "variant_id": str(d.get(variant_col) or "1") if variant_col else "1",
                     "requests": requests.get(str(d.get("id")), []),
+                    # ZoneConfigComponents and Rooms provide opaque model identifiers.
+                    # Fall back to hashes of exact model keys for older/minimal archives.
+                    "media_server_id": component_ids.get(component)
+                    or opaque_model_id("server", component, service_type),
+                    "zone_id": opaque_model_id("zone", room_ids.get(room) or room),
                 },
             )
         )
+
+
+def _media_component_ids(conn: sqlite3.Connection, tables: list[str]) -> dict[str, str]:
+    """Map protocol component identifiers to physical component identifiers.
+
+    ``ZoneConfigComponents`` is the archive's physical component-to-zone table
+    (sibling PROTOCOL.md §13.1). A component can have several zone rows, so use a
+    field only when every nonempty row agrees on one identifier.
+    """
+    table = "ZoneConfigComponents"
+    if table not in tables:
+        return {}
+    cols = _table_columns(conn, table)
+    component_col = _pick(cols, ("component",))
+    if component_col is None:
+        return {}
+    identifier_cols = [
+        column
+        for candidates in (("uid",), ("componentID",), ("internalID",))
+        if (column := _pick(cols, candidates)) is not None
+    ]
+    if not identifier_cols:
+        return {}
+    values: dict[str, list[set[str]]] = {}
+    cursor = conn.execute(
+        f'''SELECT "{component_col}", {", ".join(f'"{column}"' for column in identifier_cols)}
+        FROM "{table}"'''
+    )
+    for row in cursor:
+        component = str(row[0] or "")
+        if not component:
+            continue
+        fields = values.setdefault(component, [set() for _ in identifier_cols])
+        for identifiers, value in zip(fields, row[1:], strict=True):
+            if value not in (None, ""):
+                identifiers.add(str(value))
+    result: dict[str, str] = {}
+    for component, fields in values.items():
+        if identifier := next((next(iter(field)) for field in fields if len(field) == 1), None):
+            result[component] = opaque_model_id("server", identifier)
+    return result
 
 
 def _service_requests(conn: sqlite3.Connection, tables: list[str]) -> dict[str, list[str]]:

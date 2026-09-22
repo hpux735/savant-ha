@@ -36,6 +36,7 @@ CONF_UID = "uid"  # generated stable client identifier
 CONF_NAME = "name"  # discovered host name
 CONF_ROOMS = "rooms"  # user-supplied room names (list[str])
 CONF_DEVICES = "devices"  # user-approved device list (list[dict]) from the picker step
+CONF_MEDIA_TOPOLOGY = "media_topology"  # complete archive media inventory for exact routing
 
 # Device kinds in the approved device list (mirror HA platform names).  Devices come
 # from the uiconfig.tar.gz config archive (PROTOCOL.md §13); each maps to one HA device

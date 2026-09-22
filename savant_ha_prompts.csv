@@ -163,3 +163,244 @@ timestamp_epoch_ms,timestamp_iso_utc,session_id,session_title,prompt
 1789774978195,2026-09-18T23:42:58.195000Z,ses_savant_ha2_000,Synchronize capture audit,"I had the reverse engineering side perform a complete audit of the documentation and existing log files.  Its repo has been updated.  Pay particular attention to  CAPTURE_AUDIT.md.  Pull these changes and perform the necessary changes to have sync with them"
 1789776656821,2026-09-19T00:10:56.821000Z,ses_savant_ha2_000,Continue or clarify,"Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
 1790026955283,2026-09-21T21:42:35.283000Z,ses_savant_ha2_000,Fix Savant media search capability,"an audit of the media browsing/searching capability of the savant media service found that search woeks (provided a a few criteria are met) but `can_search` is set to false, which implies that search isn't implemented.  Look into this and ensure that media searching in savant devices are correctly implemented and idiomatic for home assistant"
+1790047327011,2026-09-22T03:22:07.013Z,ses_savant_ha2_000,Implement shared-media-server zone routing,"Implement explicit shared-media-server zone routing in the Savant Home Assistant integration.
+
+Background
+
+The integration currently creates one media_player entity per room/server combination. For example:
+
+- media_player.master_bath_music
+- media_player.dining_room_music
+- media_player.living_room_music
+
+These appear to Home Assistant as separate media players, but they are projections of the same physical Savant media server named ""Music."" The physical server can be routed to multiple Savant zones simultaneously.
+
+Calling media_player.play_media on media_player.master_bath_music starts content on the shared Music server. Every zone currently assigned to that server receives the audio. Targeting the Master Bath entity does not currently imply that Master Bath should be the only selected zone.
+
+There may be several independent physical servers, such as ""Music"" and ""Living Room Soundbar."" Do not associate entities by friendly name, entity ID naming patterns, room names, or source name alone. The relationship must come from stable identifiers in the Savant model.
+
+Goal
+
+Expose enough topology and one atomic routing operation so an external client can reliably perform this sequence:
+
+1. Identify which physical media server an endpoint entity represents.
+2. Identify the endpoint's Savant zone.
+3. See every endpoint currently selected for that server.
+4. Replace the server's complete zone selection with an exact desired set.
+5. Verify the final selected zones.
+6. Call media_player.play_media after routing is correct.
+
+A request to play media through media_player.master_bath_music alone should be implementable as:
+
+1. Set the Music server's selected endpoints to exactly [media_player.master_bath_music].
+2. Verify that Dining Room and other endpoints are no longer selected.
+3. Start playback through media_player.master_bath_music.
+
+Repository workflow
+
+Inspect the existing integration before editing. Follow its entity coordinator, API client, service registration, locking, naming, typing, and test conventions. Identify how the Savant API currently represents physical media servers, zones, source assignments, and active routes. Do not infer relationships from display names.
+
+Preserve existing entity IDs, unique IDs, and existing media_player behavior unless a change is explicitly required below.
+
+Entity topology
+
+Expose stable topology on every projected Savant media-player entity.
+
+At minimum, make these values available to integration code and in Home Assistant state attributes:
+
+- savant_media_server_id: stable identifier for the physical media server
+- savant_zone_id: stable identifier for the endpoint zone represented by this entity
+- savant_selected_zone_entity_ids: exact Home Assistant entity IDs currently selected for this physical server
+- savant_shared_media_server: true when multiple endpoint entities project the same physical server
+
+The exact attribute names may be adjusted to match existing integration conventions, but they must be documented and stable. Prefer opaque Savant identifiers over names.
+
+All aliases of the same physical server must report the same media-server identifier and the same selected-zone set. Each alias must report its own distinct zone identifier.
+
+Do not expose credentials, host details, internal tokens, or other sensitive data.
+
+Atomic service
+
+Add an integration service named:
+
+savant.set_media_server_zones
+
+The service should accept:
+
+- entity_id: one projected media-player entity used as the anchor that identifies the physical server
+- zone_entity_ids: the complete desired set of projected endpoint entities for that same physical server
+
+Example Home Assistant service data:
+
+{
+  ""entity_id"": ""media_player.master_bath_music"",
+  ""zone_entity_ids"": [
+    ""media_player.master_bath_music""
+  ]
+}
+
+The service uses entity_id only to identify the physical server. zone_entity_ids is replacement state, not a list of incremental additions.
+
+Required semantics
+
+- Resolve the anchor entity through the entity registry/runtime entity platform.
+- Determine its physical media-server ID from integration data, not its name.
+- Resolve every zone_entity_id to a Savant media-player entity.
+- Reject unknown entities.
+- Reject entities belonging to another integration.
+- Reject zone entities associated with a different physical media server.
+- Deduplicate repeated zone IDs.
+- Treat the desired list as the exact final routing set.
+- Deselect every currently active endpoint not in the desired set.
+- Select every desired endpoint not currently active.
+- Leave already-correct endpoints unchanged.
+- Serialize concurrent changes for the same physical server with a per-server lock or the integration's equivalent coordinator mechanism.
+- Refresh coordinator/entity state after the operation.
+- Verify the final selected-zone set after refresh.
+- Return an actionable Home Assistant service error if the requested final state cannot be reached.
+- Make repeated calls with an already-correct desired set idempotent.
+- Do not silently leave additional zones selected.
+- Do not use friendly names or entity ID parsing to determine server membership.
+
+If the Savant backend supports replacing the entire route in one API operation, use that operation.
+
+If the backend only supports individual select/deselect operations, perform them under one per-server lock and treat the whole operation as one logical transaction. Apply removals before additions unless the Savant API requires another safe ordering. If an intermediate operation fails, refresh actual state and report the resulting selected zones clearly. Do not claim success when only part of the requested topology was applied.
+
+Service response
+
+If the installed Home Assistant version and integration conventions support service responses, return a response similar to:
+
+{
+  ""media_server_id"": ""<stable opaque id>"",
+  ""requested_zone_entity_ids"": [
+    ""media_player.master_bath_music""
+  ],
+  ""selected_zone_entity_ids"": [
+    ""media_player.master_bath_music""
+  ],
+  ""deselected_zone_entity_ids"": [
+    ""media_player.dining_room_music""
+  ],
+  ""unchanged_zone_entity_ids"": [],
+  ""verified"": true
+}
+
+Use exact entity IDs in the response. Sort lists deterministically.
+
+If service responses are not supported, ensure the refreshed entity attributes provide the same verifiable final state.
+
+Empty selection
+
+Support an empty zone_entity_ids array if the Savant backend allows a server to have no selected endpoints. In that case, entity_id still identifies which physical server to modify.
+
+If Savant does not allow an empty routing set, reject it with a clear validation error rather than silently retaining a zone.
+
+Home Assistant grouping support
+
+Investigate whether this topology can also be represented safely through Home Assistant's standard media-player grouping API:
+
+- MediaPlayerEntityFeature.GROUPING
+- group_members
+- media_player.join
+- media_player.unjoin
+
+Implement standard grouping only if its semantics can accurately represent Savant routing.
+
+If implemented:
+
+- group_members must contain exact entity IDs for currently selected endpoint projections of the same physical server.
+- async_join_players must add only valid endpoint projections of that same server.
+- async_unjoin_player must deselect the target endpoint from its server.
+- Cross-server joins must be rejected.
+- Group operations and set_media_server_zones must use the same per-server lock and state-refresh path.
+
+Do not force Savant routing into Home Assistant grouping if doing so would be inaccurate. The atomic savant.set_media_server_zones service and stable topology attributes are required regardless.
+
+Playback behavior
+
+Do not automatically change all existing media_player.play_media behavior unless existing integration semantics and compatibility allow it.
+
+The primary contract should be:
+
+1. Route with savant.set_media_server_zones.
+2. Verify the selected zones.
+3. Invoke media_player.play_media.
+
+If you decide that calling play_media on a projected endpoint should automatically isolate that endpoint, document the behavioral change prominently and add compatibility tests. Prefer keeping routing explicit so existing Home Assistant automations are not silently changed.
+
+State consistency
+
+Ensure selection state updates promptly after:
+
+- set_media_server_zones
+- join
+- unjoin
+- turn_on
+- turn_off
+- external routing changes made directly through Savant
+
+If the integration uses a coordinator, the selected-zone topology should be derived centrally so aliases of one server cannot report inconsistent membership.
+
+Tests
+
+Add regression tests covering:
+
+- Multiple endpoint entities share one stable media-server ID.
+- Different physical servers have different IDs even if names are similar.
+- Each endpoint exposes its stable zone ID.
+- All aliases report the same selected-zone set.
+- Exact replacement removes previously selected zones.
+- Exact replacement adds newly requested zones.
+- Exact replacement both removes and adds zones.
+- An already-correct request is idempotent.
+- Duplicate requested entities are deduplicated.
+- Unknown entities are rejected.
+- Non-Savant entities are rejected.
+- Cross-server zone entities are rejected.
+- Empty selection works or fails explicitly according to backend capability.
+- Concurrent requests for one server are serialized.
+- A partial backend failure is surfaced and actual state is refreshed.
+- The service response reports the verified final topology.
+- External Savant routing changes appear after coordinator refresh.
+- Existing entity IDs, unique IDs, browsing, search, transport, volume, and playback behavior remain compatible.
+- Standard join/unjoin behavior, if implemented.
+
+Documentation
+
+Document:
+
+- Why several room entities may represent one shared physical media server.
+- The distinction between a media server and a zone endpoint.
+- The new topology attributes.
+- The exact replacement semantics of savant.set_media_server_zones.
+- A YAML example that isolates playback to one room.
+- A YAML example that selects multiple rooms.
+- How to deselect every room if supported.
+- Whether standard Home Assistant grouping is supported.
+
+Acceptance scenario
+
+Given these currently selected endpoints for the Music server:
+
+- media_player.master_bath_music
+- media_player.dining_room_music
+
+When this service is called:
+
+{
+  ""entity_id"": ""media_player.master_bath_music"",
+  ""zone_entity_ids"": [
+    ""media_player.master_bath_music""
+  ]
+}
+
+Then:
+
+- Dining Room is deselected from the Music server.
+- Master Bath remains selected.
+- The refreshed topology reports only media_player.master_bath_music.
+- The service reports verified success.
+- A subsequent play_media call through media_player.master_bath_music is heard only in Master Bath.
+- No relationship or target is inferred from the word ""Music"" or from an entity ID naming convention.
+
+Before implementation, summarize how the current Savant data model represents servers, zones, and routing. After implementation, report the files changed, the service contract, any Home Assistant grouping support added, compatibility implications, and all tests run."

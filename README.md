@@ -65,6 +65,73 @@ extra room names) live behind the integration's **Configure** button.
 | Media Player | `ServiceImplementationZonedService` (one selectable source or Apple TV endpoint per room) | music: browsing, global catalog search, playback, now-playing, power, volume, transport, and album art; Apple TV: archive-declared power, volume, and play/pause |
 | Scene | Savant dashboard `scenesAndFoldersReduced` updates | standalone native `scene.turn_on` activation |
 
+## Shared media-server routing
+
+Several room media-player entities can be endpoint projections of one physical Savant
+media server. For example, room-specific `Music` entities share the server's content and
+transport while each entity controls whether its own Savant zone receives that server.
+The integration derives this relationship from the configuration archive's physical
+component and room identifiers, never from entity IDs, room names, or display names.
+
+Every projected media-player entity exposes these stable state attributes:
+
+- `savant_media_server_id`: opaque physical media-server identifier.
+- `savant_zone_id`: opaque identifier for this endpoint's Savant zone.
+- `savant_selected_zone_entity_ids`: sorted exact HA entity IDs currently selected for
+  the server. Every alias of one server reports the same list.
+- `savant_shared_media_server`: `true` when multiple imported endpoints project the server.
+
+Use `savant_ha.set_media_server_zones` before `media_player.play_media`. The
+`zone_entity_ids` list is the complete desired replacement state, not an incremental
+addition. The service removes extra selected endpoints first, adds missing endpoints,
+waits for authoritative Savant state pushes, and returns the verified final topology when
+the caller requests response data. Repeating an already-correct request sends no controls.
+
+Isolate playback to one room:
+
+```yaml
+action: savant_ha.set_media_server_zones
+data:
+  entity_id: media_player.master_bath_music
+  zone_entity_ids:
+    - media_player.master_bath_music
+response_variable: savant_route
+```
+
+Select multiple rooms:
+
+```yaml
+action: savant_ha.set_media_server_zones
+data:
+  entity_id: media_player.master_bath_music
+  zone_entity_ids:
+    - media_player.master_bath_music
+    - media_player.dining_room_music
+```
+
+Deselect every imported endpoint for the server:
+
+```yaml
+action: savant_ha.set_media_server_zones
+data:
+  entity_id: media_player.master_bath_music
+  zone_entity_ids: []
+```
+
+An empty route works when every currently selected endpoint supports Savant `PowerOff`;
+otherwise the service fails explicitly and reports the actual selected set. Only imported
+endpoint projections have HA entity IDs and can be requested or reported, but the complete
+archive topology is retained so exact replacement also deselects active, unimported
+endpoints. Existing entries must be reconfigured once to acquire that complete topology;
+until then exact routing and grouping fail explicitly while existing media controls continue
+to work.
+
+Standard Home Assistant grouping is also supported for shared servers. `group_members`
+reports the same exact selected endpoint IDs, `media_player.join` adds same-server
+endpoints, and `media_player.unjoin` removes the targeted endpoint. Cross-server joins are
+rejected. Grouping and exact replacement use the same per-server lock and verification
+path. Playback itself remains backward compatible and does not implicitly isolate a room.
+
 ## Limitations / open questions
 
 These are inherited from the sibling protocol document — see `PROTOCOL.md` §7:

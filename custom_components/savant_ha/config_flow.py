@@ -34,6 +34,7 @@ from .const import (
     CONF_HOME_ID,
     CONF_HOST_TOKEN,
     CONF_HOST_UID,
+    CONF_MEDIA_TOPOLOGY,
     CONF_NAME,
     CONF_ROOMS,
     DEVICE_TYPE_CLIMATE,
@@ -175,6 +176,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str = ""
         self._password: str = ""
         self._devices: list[dict[str, Any]] = []
+        self._media_topology: list[dict[str, Any]] | None = None
         self._reconfigure_entry: ConfigEntry | None = None
 
     async def async_step_user(
@@ -247,6 +249,15 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 self._devices = _devices_from_info(probe)
+                self._media_topology = (
+                    [
+                        dict(device)
+                        for device in self._devices
+                        if device["type"] == DEVICE_TYPE_MEDIA_PLAYER
+                    ]
+                    if probe.devices
+                    else None
+                )
                 if self._coolmaster_entries():
                     self._devices = exclude_duplicate_coolmaster_devices(
                         self._devices, self._coolmaster_climate_names()
@@ -300,17 +311,17 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # the HA area via the entity's suggested_area.
             approved = [dict(d) for d in self._devices if d["id"] in selected]
 
-            return self.async_create_entry(
-                title=self._name or self._host,
-                data={
-                    CONF_HOST_UID: self._host_uid,
-                    CONF_NAME: self._name,
-                    CONF_HOME_ID: self._home_id,
-                    CONF_USERNAME: self._username,
-                    CONF_PASSWORD: self._password,
-                    CONF_DEVICES: approved,
-                },
-            )
+            data = {
+                CONF_HOST_UID: self._host_uid,
+                CONF_NAME: self._name,
+                CONF_HOME_ID: self._home_id,
+                CONF_USERNAME: self._username,
+                CONF_PASSWORD: self._password,
+                CONF_DEVICES: approved,
+            }
+            if self._media_topology is not None:
+                data[CONF_MEDIA_TOPOLOGY] = self._media_topology
+            return self.async_create_entry(title=self._name or self._host, data=data)
 
         return self.async_show_form(
             step_id="devices",
@@ -354,6 +365,15 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 self._devices = _devices_from_info(probe)
+                self._media_topology = (
+                    [
+                        dict(device)
+                        for device in self._devices
+                        if device["type"] == DEVICE_TYPE_MEDIA_PLAYER
+                    ]
+                    if probe.devices
+                    else None
+                )
                 if self._coolmaster_entries():
                     self._devices = exclude_duplicate_coolmaster_devices(
                         self._devices, self._coolmaster_climate_names()
@@ -396,6 +416,8 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_DEVICES: [dict(d) for d in self._devices if d["id"] in selected],
             }
         )
+        if self._media_topology is not None:
+            data[CONF_MEDIA_TOPOLOGY] = self._media_topology
         self.hass.config_entries.async_update_entry(self._reconfigure_entry, data=data)
         return self.async_abort(reason="reconfigure_successful")
 
