@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from datetime import datetime
 
 from homeassistant.components.media_player import (
@@ -41,7 +40,7 @@ from .const import (
 from .control import audio_zone_logical_component, coerce_number, parse_media_time
 from .entity import SavantEntity
 from .hub import SavantHub
-from .media_routing import MediaRouteError, opaque_model_id
+from .media_routing import MediaRouteError, opaque_model_id, stable_media_node_id
 from .savant_client import SavantError, image_content_type
 
 _SONG = "CurrentSongName"
@@ -174,6 +173,19 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
         features = MediaPlayerEntityFeature(0)
+        # Home Assistant rejects entity services before invoking the entity when a
+        # required feature is absent. Advertise the standard transport surface so
+        # archive-declared gaps reach the explicit ServiceValidationError checks below
+        # instead of becoming HTTP 500 responses from the core service dispatcher.
+        features |= (
+            MediaPlayerEntityFeature.TURN_ON
+            | MediaPlayerEntityFeature.TURN_OFF
+            | MediaPlayerEntityFeature.PLAY
+            | MediaPlayerEntityFeature.PAUSE
+            | MediaPlayerEntityFeature.STOP
+            | MediaPlayerEntityFeature.NEXT_TRACK
+            | MediaPlayerEntityFeature.PREVIOUS_TRACK
+        )
         if VERB_POWER_ON in self._requests:
             features |= MediaPlayerEntityFeature.TURN_ON
         if VERB_POWER_OFF in self._requests:
@@ -316,7 +328,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     async def async_turn_on(self) -> None:
         if VERB_POWER_ON not in self._requests:
-            return
+            raise ServiceValidationError("Savant endpoint does not support PowerOn")
         try:
             await self.hub.async_set_media_endpoint_power(self, True)
         except MediaRouteError as err:
@@ -327,7 +339,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     async def async_turn_off(self) -> None:
         if VERB_POWER_OFF not in self._requests:
-            return
+            raise ServiceValidationError("Savant endpoint does not support PowerOff")
         try:
             await self.hub.async_set_media_endpoint_power(self, False)
         except MediaRouteError as err:
@@ -381,7 +393,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     async def async_media_play(self) -> None:
         if VERB_PLAY not in self._requests:
-            return
+            raise ServiceValidationError("Savant endpoint does not support Play")
         await self._media_request(VERB_PLAY)
         if self._service_type != SVC_AV_SAVANTMUSIC:
             # The native app immediately cancels repeat after Apple TV Play (PROTOCOL.md §5.4).
@@ -392,20 +404,26 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     async def async_media_pause(self) -> None:
         if VERB_PAUSE not in self._requests:
-            return
+            raise ServiceValidationError("Savant endpoint does not support Pause")
         await self._media_request(VERB_PAUSE)
         self._optimistic_state = MediaPlayerState.PAUSED
         self.async_write_ha_state()
 
     async def async_media_next_track(self) -> None:
         if VERB_SKIP_UP not in self._requests:
-            return
+            raise ServiceValidationError("Savant endpoint does not support SkipUp")
         await self._media_request(VERB_SKIP_UP)
 
     async def async_media_previous_track(self) -> None:
         if VERB_SKIP_DOWN not in self._requests:
-            return
+            raise ServiceValidationError("Savant endpoint does not support SkipDown")
         await self._media_request(VERB_SKIP_DOWN)
+
+    async def async_media_stop(self) -> None:
+        """Reject stop explicitly; Savant exposes pause but no stop verb."""
+        raise ServiceValidationError(
+            "Savant media endpoints do not expose a standard Stop command"
+        )
 
     async def async_media_seek(self, position: float) -> None:
         if VERB_SEEK not in self._requests:
@@ -436,7 +454,6 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
                 children=[],
             )
         if media_content_id is None:
-            self._browse_nodes.clear()
             self._browse_artwork.clear()
             try:
                 result = await self.hub.client.async_browse_music(
@@ -579,7 +596,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
 
     def _browse_node(self, node: dict[str, object]) -> BrowseMedia:
         """Translate one opaque Savant UI node without exposing its provider metadata."""
-        node_id = uuid.uuid4().hex
+        node_id = stable_media_node_id(node)
         self._browse_nodes[node_id] = node
         browsable = node.get("actionType") == "browsable"
         playable = node.get("actionType") == "action" and self._activity_is_addressable

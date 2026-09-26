@@ -6,7 +6,17 @@ import asyncio
 
 import pytest
 
-from custom_components.savant_ha.media_routing import MediaRouteError, MediaRouteManager
+from custom_components.savant_ha.media_routing import (
+    MediaRouteError,
+    MediaRouteManager,
+    stable_media_node_id,
+)
+
+
+def test_media_node_ids_are_stable_and_opaque():
+    node = {"title": "Pandora", "actionType": "browsable", "arguments": {"id": 7}}
+    assert stable_media_node_id(node) == stable_media_node_id(dict(node))
+    assert stable_media_node_id(node) != stable_media_node_id({**node, "arguments": {"id": 8}})
 
 
 class FakeEndpoint:

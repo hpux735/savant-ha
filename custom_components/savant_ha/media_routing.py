@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections import defaultdict
 from typing import Any, Protocol
 
@@ -12,6 +13,13 @@ def opaque_model_id(kind: str, *parts: str) -> str:
     """Return a non-identifying stable ID from exact Savant model identifiers."""
     digest = hashlib.sha256("\0".join(parts).encode()).hexdigest()[:24]
     return f"{kind}:{digest}"
+
+
+def stable_media_node_id(node: dict[str, Any]) -> str:
+    """Return an opaque ID stable for the same captured media node."""
+    payload = json.dumps(node, sort_keys=True, separators=(",", ":"), default=str)
+    digest = hashlib.sha256(payload.encode()).hexdigest()[:24]
+    return f"media:{digest}"
 
 
 class MediaRouteEndpoint(Protocol):

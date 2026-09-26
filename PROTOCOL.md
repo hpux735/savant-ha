@@ -282,6 +282,10 @@ state. Non-`all` filters and paging beyond `offset:0` remain unsupported.
 Browse-node `artworkKey` values use the same `session/fileDownload` wrapper as now-playing art,
 with `type:"thumbnailArtwork"`; serve the returned JPEG or PNG through Home Assistant's browse-image
 proxy without exposing the opaque artwork key in media IDs.
+Home Assistant browse IDs are deterministic opaque hashes of the returned node, so repeated
+browse calls for an unchanged node return the same ID. Savant has no observed standard `Stop`
+verb; `media_player.media_stop` therefore returns a validation error rather than sending an
+invented request.
 The captured track selection followed an earlier Music `PowerOn`; selecting a track while its
 zone is off is not verified. Wait for the room's nonempty `ActiveService` state after `PowerOn`
 before submitting the track node. Provider/browser-session expiry behavior is not captured.

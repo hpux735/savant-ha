@@ -87,6 +87,10 @@ addition. The service removes extra selected endpoints first, adds missing endpo
 waits for authoritative Savant state pushes, and returns the verified final topology when
 the caller requests response data. Repeating an already-correct request sends no controls.
 
+Music browse IDs are opaque, deterministic hashes of the captured node. They remain
+stable when the same catalog node is returned again, while the Savant routing metadata
+remains private to the integration.
+
 Isolate playback to one room:
 
 ```yaml
