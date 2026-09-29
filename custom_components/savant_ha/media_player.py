@@ -43,6 +43,7 @@ from .hub import SavantHub
 from .media_routing import (
     MediaRouteError,
     is_direct_media_action,
+    media_action_title,
     opaque_model_id,
     stable_media_node_id,
 )
@@ -612,7 +613,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         browsable = node.get("actionType") == "browsable"
         children = self._browse_node_children(node) if browsable else []
         playable = self._is_playable_node(node)
-        title = str(node.get("title") or node.get("subtitle") or "Savant Music")
+        title = media_action_title(node)
         return BrowseMedia(
             media_class=MediaClass.DIRECTORY if browsable else MediaClass.MUSIC,
             media_content_id=node_id,

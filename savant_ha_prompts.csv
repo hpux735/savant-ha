@@ -419,3 +419,5 @@ Before implementation, summarize how the current Savant data model represents se
 1790706852709,2026-09-29T18:34:12.709Z,,,commit and push
 1790707431281,2026-09-29T18:43:51.281Z,,,media browsing is entirely broken now
 1790707876107,2026-09-29T18:51:16.107Z,,,commit and push
+1790708378168,2026-09-29T18:59:38.168Z,,,"there are now two entries in the playlist display with the name of the playlist.  Am I to assume these are the play list and shuffle list entries?"
+1790708685627,2026-09-29T19:04:45.627Z,,,commit and push

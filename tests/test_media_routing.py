@@ -10,6 +10,7 @@ from custom_components.savant_ha.media_routing import (
     MediaRouteError,
     MediaRouteManager,
     is_direct_media_action,
+    media_action_title,
     stable_media_node_id,
 )
 
@@ -33,6 +34,15 @@ def test_playlist_play_and_shuffle_actions_are_directly_playable():
     assert not is_direct_media_action(
         {"actionType": "action", "icon": "music_icon_play"}, addressable=False
     )
+
+
+def test_playlist_action_titles_distinguish_play_and_shuffle():
+    assert media_action_title(
+        {"actionType": "action", "icon": "music_icon_play", "title": "FALL"}
+    ) == "FALL (Play)"
+    assert media_action_title(
+        {"actionType": "action", "icon": "music_icon_shuffle", "title": "FALL"}
+    ) == "FALL (Shuffle)"
 
 
 class FakeEndpoint:

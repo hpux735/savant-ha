@@ -38,6 +38,19 @@ def is_direct_media_action(node: dict[str, Any], *, addressable: bool) -> bool:
     return title not in _NON_PLAY_ACTION_TITLES
 
 
+def media_action_title(node: dict[str, Any]) -> str:
+    """Give returned playlist actions distinct Home Assistant browse labels."""
+    title = str(node.get("title") or node.get("subtitle") or "Savant Music")
+    if node.get("actionType") != "action":
+        return title
+    icon = str(node.get("icon") or "").strip().casefold()
+    if icon == "music_icon_shuffle":
+        return f"{title} (Shuffle)"
+    if icon == "music_icon_play":
+        return f"{title} (Play)"
+    return title
+
+
 class MediaRouteEndpoint(Protocol):
     """The endpoint surface required by the route manager."""
 
