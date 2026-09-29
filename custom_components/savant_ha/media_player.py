@@ -571,15 +571,18 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         self, result: dict[str, object], title: str, *, include_search: bool = False
     ) -> BrowseMedia:
         nodes = result.get("nodes")
-        children = (
-            [
-                self._browse_node(node)
-                for node in nodes
-                if isinstance(node, dict) and self._is_media_browse_node(node)
-            ]
-            if isinstance(nodes, list)
-            else []
-        )
+        children: list[BrowseMedia] = []
+        if isinstance(nodes, list):
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                if not self._is_media_browse_node(node):
+                    children.extend(
+                        self._browse_node(child)
+                        for child in self._playable_browse_children(node)
+                    )
+                else:
+                    children.append(self._browse_node(node))
         if include_search:
             children.insert(
                 0,
@@ -607,17 +610,16 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node_id = stable_media_node_id(node)
         self._browse_nodes[node_id] = node
         browsable = node.get("actionType") == "browsable"
-        children = self._browse_node_children(node)
+        children = self._browse_node_children(node) if browsable else []
         playable = self._is_playable_node(node)
-        has_children = bool(children)
         title = str(node.get("title") or node.get("subtitle") or "Savant Music")
         return BrowseMedia(
-            media_class=MediaClass.DIRECTORY if browsable or has_children else MediaClass.MUSIC,
+            media_class=MediaClass.DIRECTORY if browsable else MediaClass.MUSIC,
             media_content_id=node_id,
             media_content_type=MediaType.MUSIC,
             title=title,
             can_play=playable,
-            can_expand=browsable or has_children,
+            can_expand=browsable,
             children=children,
             thumbnail=(
                 self.get_browse_image_url(MediaType.MUSIC, node_id)
@@ -636,6 +638,19 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             if isinstance(child, dict) and self._is_media_browse_node(child)
         ]
 
+    @staticmethod
+    def _playable_browse_children(self, node: dict[str, object]) -> list[dict[str, object]]:
+        children = node.get("children")
+        if not isinstance(children, list):
+            return []
+        return [
+            child
+            for child in children
+            if isinstance(child, dict)
+            and self._is_media_browse_node(child)
+            and self._is_playable_node(child)
+        ]
+
     def _is_playable_node(self, node: dict[str, object]) -> bool:
         """Recognize returned direct-play actions, including playlist shuffle actions."""
         return is_direct_media_action(node, addressable=self._activity_is_addressable)
@@ -647,11 +662,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             return False
         if node.get("actionType") in {"browsable", "action"}:
             return True
-        children = node.get("children")
-        return isinstance(children, list) and any(
-            isinstance(child, dict) and self._is_media_browse_node(child)
-            for child in children
-        )
+        return False
 
     def _active_services(self) -> set[str]:
         """Return exact identifiers from both captured room service states."""
