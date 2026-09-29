@@ -410,3 +410,6 @@ Before implementation, summarize how the current Savant data model represents se
 1790698324294,2026-09-29T16:12:04.294Z,,,"the reverse engineering doc was updated with information about playing playlists normally and via shuffle.  Look into the integration and ensure that when a user is browing the media tree that playlist entries that support direct playback (not just starting the first song of a playlist) are marked as playable.  Also, see if there's an idiomatic way to handle shuffle."
 1790698813482,2026-09-29T16:20:13.482Z,,,the docs were updated, hopefully that helps with shuffle behavior
 1790699075413,2026-09-29T16:24:35.413Z,,,commit and push
+1790705088790,2026-09-29T18:04:48.790Z,,,"I think my home assistant has been updated with this change (631b5ac).  I'm not seeing shuffle advertised (check the Fall playlist on Amazon Music) on playlists that should support it.  Can you look into it?"
+1790705256765,2026-09-29T18:07:36.765Z,,,"On the savant app, I can click ""shuffle"" on the playlist, though"
+1790705499945,2026-09-29T18:11:39.945Z,,,"Ok, commit and push, and we'll try it"

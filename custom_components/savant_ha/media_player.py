@@ -609,14 +609,15 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         browsable = node.get("actionType") == "browsable"
         children = self._browse_node_children(node)
         playable = self._is_playable_node(node)
+        has_children = bool(children)
         title = str(node.get("title") or node.get("subtitle") or "Savant Music")
         return BrowseMedia(
-            media_class=MediaClass.DIRECTORY if browsable else MediaClass.MUSIC,
+            media_class=MediaClass.DIRECTORY if browsable or has_children else MediaClass.MUSIC,
             media_content_id=node_id,
             media_content_type=MediaType.MUSIC,
             title=title,
             can_play=playable,
-            can_expand=browsable or bool(children),
+            can_expand=browsable or has_children,
             children=children,
             thumbnail=(
                 self.get_browse_image_url(MediaType.MUSIC, node_id)
@@ -639,13 +640,18 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         """Recognize returned direct-play actions, including playlist shuffle actions."""
         return is_direct_media_action(node, addressable=self._activity_is_addressable)
 
-    @staticmethod
-    def _is_media_browse_node(node: dict[str, object]) -> bool:
+    def _is_media_browse_node(self, node: dict[str, object]) -> bool:
         """Hide captured navigation/status entries that cannot select media."""
         title = str(node.get("title") or "").strip().casefold()
         if title in _NON_MEDIA_ROOT_TITLES or title.startswith("connected to"):
             return False
-        return node.get("actionType") in {"browsable", "action"}
+        if node.get("actionType") in {"browsable", "action"}:
+            return True
+        children = node.get("children")
+        return isinstance(children, list) and any(
+            isinstance(child, dict) and self._is_media_browse_node(child)
+            for child in children
+        )
 
     def _active_services(self) -> set[str]:
         """Return exact identifiers from both captured room service states."""
