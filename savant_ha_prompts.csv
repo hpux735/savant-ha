@@ -417,3 +417,5 @@ Before implementation, summarize how the current Savant data model represents se
 1790706570335,2026-09-29T18:29:30.335Z,,,"I don't think the ""Savant Music"" name is a good one.  If you have to use that model it should be named ""playlist"" or something like that."
 1790706736205,2026-09-29T18:32:16.205Z,,,"it is absolutely presented to the user, and more to the point it's also exposed to API/MCP clients and they don't know what to do with it either"
 1790706852709,2026-09-29T18:34:12.709Z,,,commit and push
+1790707431281,2026-09-29T18:43:51.281Z,,,media browsing is entirely broken now
+1790707876107,2026-09-29T18:51:16.107Z,,,commit and push

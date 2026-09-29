@@ -638,7 +638,6 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             if isinstance(child, dict) and self._is_media_browse_node(child)
         ]
 
-    @staticmethod
     def _playable_browse_children(self, node: dict[str, object]) -> list[dict[str, object]]:
         children = node.get("children")
         if not isinstance(children, list):
