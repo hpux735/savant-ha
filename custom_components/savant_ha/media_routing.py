@@ -8,6 +8,11 @@ import json
 from collections import defaultdict
 from typing import Any, Protocol
 
+_NON_PLAY_ACTION_TITLES = frozenset(
+    {"save as favorite", "save to playlist", "add to home", "get more info"}
+)
+_PLAY_ACTION_ICONS = frozenset({"music_icon_play", "music_icon_shuffle"})
+
 
 def opaque_model_id(kind: str, *parts: str) -> str:
     """Return a non-identifying stable ID from exact Savant model identifiers."""
@@ -20,6 +25,17 @@ def stable_media_node_id(node: dict[str, Any]) -> str:
     payload = json.dumps(node, sort_keys=True, separators=(",", ":"), default=str)
     digest = hashlib.sha256(payload.encode()).hexdigest()[:24]
     return f"media:{digest}"
+
+
+def is_direct_media_action(node: dict[str, Any], *, addressable: bool) -> bool:
+    """Return whether a returned action node can be submitted for playback."""
+    if node.get("actionType") != "action" or not addressable:
+        return False
+    icon = str(node.get("icon") or "").strip().casefold()
+    if icon in _PLAY_ACTION_ICONS:
+        return True
+    title = str(node.get("title") or node.get("subtitle") or "").strip().casefold()
+    return title not in _NON_PLAY_ACTION_TITLES
 
 
 class MediaRouteEndpoint(Protocol):

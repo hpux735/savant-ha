@@ -838,17 +838,31 @@ class SavantClient:
             self._pending_music_search_refresh.pop((prefix, search_uuid), None)
 
     async def async_follow_music_node(
-        self, component: str, logical_component: str, node: dict[str, Any]
+        self,
+        component: str,
+        logical_component: str,
+        node: dict[str, Any],
+        *,
+        strip_presentation: bool = False,
     ) -> dict[str, Any]:
-        """Follow a captured typed-search result node (sibling PROTOCOL.md §8.4-8.5)."""
+        """Follow a captured Music node, optionally submitting it as an action."""
         operation = node.get("query") or "browse"
         if operation not in {"browse", "browseSearch"}:
             raise ValueError("Unsupported Savant Music result node")
+        submitted_node = (
+            {
+                key: value
+                for key, value in node.items()
+                if key not in {"displayType", "children", "hasSubmenu"}
+            }
+            if strip_presentation
+            else node
+        )
         return await self._async_music_request(
             component,
             logical_component,
             operation=operation,
-            node=node,
+            node=submitted_node,
             arguments=None,
             client_type="android",
             include_identity=False,

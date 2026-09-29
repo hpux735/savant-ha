@@ -9,6 +9,7 @@ import pytest
 from custom_components.savant_ha.media_routing import (
     MediaRouteError,
     MediaRouteManager,
+    is_direct_media_action,
     stable_media_node_id,
 )
 
@@ -17,6 +18,21 @@ def test_media_node_ids_are_stable_and_opaque():
     node = {"title": "Pandora", "actionType": "browsable", "arguments": {"id": 7}}
     assert stable_media_node_id(node) == stable_media_node_id(dict(node))
     assert stable_media_node_id(node) != stable_media_node_id({**node, "arguments": {"id": 8}})
+
+
+def test_playlist_play_and_shuffle_actions_are_directly_playable():
+    assert is_direct_media_action(
+        {"actionType": "action", "icon": "music_icon_play"}, addressable=True
+    )
+    assert is_direct_media_action(
+        {"actionType": "action", "icon": "music_icon_shuffle"}, addressable=True
+    )
+    assert not is_direct_media_action(
+        {"actionType": "action", "title": "Save As Favorite"}, addressable=True
+    )
+    assert not is_direct_media_action(
+        {"actionType": "action", "icon": "music_icon_play"}, addressable=False
+    )
 
 
 class FakeEndpoint:

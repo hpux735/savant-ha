@@ -270,7 +270,12 @@ use `{clientType:"iPhone",limit:50,offset:0,requestId,version:1,node,arguments:n
 the response carries `{requestId,screenArguments,nodes}` on the same URI. For `/browse`,
 preserve the selected node's opaque routing fields, especially its JSON-encoded
 `arguments.item`, rather than deriving a request from its title. Nodes with
-`actionType:"browsable"` are folders; action-node playback effects are not verified.
+`actionType:"browsable"` are folders; `actionType:"action"` nodes can represent direct
+selection actions. Playlist-start captures specifically contain `music_icon_play` and
+`music_icon_shuffle` action nodes; submit those returned nodes through `/browse` rather
+than synthesizing a playlist request. For action submission, omit only presentation fields
+`displayType`, `children`, and `hasSubmenu`; preserve the returned routing fields and the
+JSON-encoded `arguments.item` string.
 Typed search is capture-verified on `/search` with `clientType:"android"`, no outer
 identity fields, and `arguments:{filter:"all",searchTerm,services:["plex","tunein",
 "amazonmusic","playlists"],uuid}`. An initial `{searchReady:false,nodes:[]}` means wait
@@ -286,6 +291,8 @@ Home Assistant browse IDs are deterministic opaque hashes of the returned node, 
 browse calls for an unchanged node return the same ID. Savant has no observed standard `Stop`
 verb; `media_player.media_stop` therefore returns a validation error rather than sending an
 invented request.
+There is no captured standalone shuffle setter. Home Assistant should expose shuffle-capable
+playlist action nodes through `BrowseMedia.can_play`, not advertise `SHUFFLE_SET`.
 The captured track selection followed an earlier Music `PowerOn`; selecting a track while its
 zone is off is not verified. Wait for the room's nonempty `ActiveService` state after `PowerOn`
 before submitting the track node. Provider/browser-session expiry behavior is not captured.

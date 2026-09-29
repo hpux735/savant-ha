@@ -40,7 +40,12 @@ from .const import (
 from .control import audio_zone_logical_component, coerce_number, parse_media_time
 from .entity import SavantEntity
 from .hub import SavantHub
-from .media_routing import MediaRouteError, opaque_model_id, stable_media_node_id
+from .media_routing import (
+    MediaRouteError,
+    is_direct_media_action,
+    opaque_model_id,
+    stable_media_node_id,
+)
 from .savant_client import SavantError, image_content_type
 
 _SONG = "CurrentSongName"
@@ -512,7 +517,7 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         if self._service_type != SVC_AV_SAVANTMUSIC or media_type != MediaType.MUSIC:
             return
         node = self._browse_nodes.get(media_id)
-        if node is None or node.get("actionType") != "action":
+        if node is None or not self._is_playable_node(node):
             return
         if self._is_active_service():
             self._music_active.set()
@@ -529,7 +534,10 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
                 raise HomeAssistantError("Savant Music did not turn on for playback") from err
         try:
             await self.hub.client.async_follow_music_node(
-                self._component, self._logical_component, node
+                self._component,
+                self._logical_component,
+                node,
+                strip_presentation=True,
             )
         except (SavantError, ValueError) as err:
             raise HomeAssistantError(str(err) or "Savant media playback failed") from err
@@ -599,7 +607,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         node_id = stable_media_node_id(node)
         self._browse_nodes[node_id] = node
         browsable = node.get("actionType") == "browsable"
-        playable = node.get("actionType") == "action" and self._activity_is_addressable
+        children = self._browse_node_children(node)
+        playable = self._is_playable_node(node)
         title = str(node.get("title") or node.get("subtitle") or "Savant Music")
         return BrowseMedia(
             media_class=MediaClass.DIRECTORY if browsable else MediaClass.MUSIC,
@@ -607,13 +616,28 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
             media_content_type=MediaType.MUSIC,
             title=title,
             can_play=playable,
-            can_expand=browsable,
+            can_expand=browsable or bool(children),
+            children=children,
             thumbnail=(
                 self.get_browse_image_url(MediaType.MUSIC, node_id)
                 if isinstance(node.get("artworkKey"), str) and node["artworkKey"]
                 else None
             ),
         )
+
+    def _browse_node_children(self, node: dict[str, object]) -> list[BrowseMedia]:
+        children = node.get("children")
+        if not isinstance(children, list):
+            return []
+        return [
+            self._browse_node(child)
+            for child in children
+            if isinstance(child, dict) and self._is_media_browse_node(child)
+        ]
+
+    def _is_playable_node(self, node: dict[str, object]) -> bool:
+        """Recognize returned direct-play actions, including playlist shuffle actions."""
+        return is_direct_media_action(node, addressable=self._activity_is_addressable)
 
     @staticmethod
     def _is_media_browse_node(node: dict[str, object]) -> bool:

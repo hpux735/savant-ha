@@ -962,6 +962,48 @@ def test_follow_music_node_without_query_uses_browse_endpoint():
     assert sent[0][1][0]["node"] is node
 
 
+def test_follow_music_action_strips_presentation_fields_but_preserves_item():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]], bool]] = []
+    node = {
+        "actionType": "action",
+        "query": "browse",
+        "icon": "music_icon_shuffle",
+        "title": "My Playlist",
+        "arguments": {"item": '{"defaultAction":17}'},
+        "displayType": "list",
+        "children": [{"title": "Play"}],
+        "hasSubmenu": True,
+    }
+
+    async def run():
+        async def fake_request(uri, messages, *, include_identity):
+            sent.append((uri, messages, include_identity))
+
+        client._request_music = fake_request  # type: ignore[assignment]
+        task = asyncio.create_task(
+            client.async_follow_music_node(
+                "Music", "Audio Zone 1", node, strip_presentation=True
+            )
+        )
+        await asyncio.sleep(0)
+        uri, messages, _ = sent[0]
+        client._handle_frame(
+            _frame({"URI": uri, "messages": [{"requestId": messages[0]["requestId"], "nodes": []}]})
+        )
+        await task
+
+    asyncio.run(run())
+    submitted = sent[0][1][0]["node"]
+    assert submitted == {
+        "actionType": "action",
+        "query": "browse",
+        "icon": "music_icon_shuffle",
+        "title": "My Playlist",
+        "arguments": {"item": '{"defaultAction":17}'},
+    }
+
+
 def test_search_music_waits_for_refresh_then_repeats_the_same_search_uuid():
     client = SavantClient("10.0.0.5", 12345)
     sent: list[tuple[str, list[dict[str, object]], bool]] = []

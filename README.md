@@ -90,6 +90,9 @@ the caller requests response data. Repeating an already-correct request sends no
 Music browse IDs are opaque, deterministic hashes of the captured node. They remain
 stable when the same catalog node is returned again, while the Savant routing metadata
 remains private to the integration.
+Playlist normal-play and shuffle actions are returned as playable browse entries. Shuffle
+is intentionally not exposed as a standalone media-player toggle because Savant has no
+captured standalone shuffle setter.
 
 Isolate playback to one room:
 
