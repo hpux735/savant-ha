@@ -1156,13 +1156,15 @@ def test_search_music_ignores_unrelated_refresh_and_times_out(monkeypatch):
         asyncio.run(run())
 
 
-def test_concurrent_music_searches_correlate_refresh_and_second_response():
+def test_concurrent_music_searches_same_component_are_serialized_and_correlated():
     client = SavantClient("10.0.0.5", 12345)
     sent: list[tuple[str, list[dict[str, object]]]] = []
 
     async def run():
         async def fake_request(uri, messages, *, include_identity):
             sent.append((uri, messages))
+            if len(sent) % 2 == 0:
+                return
             client._handle_frame(
                 _frame(
                     {
@@ -1184,16 +1186,211 @@ def test_concurrent_music_searches_correlate_refresh_and_second_response():
             for term in ("Fall", "Winter")
         ]
         await asyncio.sleep(0)
-        initial = list(sent)
-        for _, messages in initial:
-            search_uuid = messages[0]["arguments"]["uuid"]
+        assert len(sent) == 1
+        first_uuid = sent[0][1][0]["arguments"]["uuid"]
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": "state/update",
+                    "messages": [
+                        {
+                            "state": "Music.AVB Stream 5.refreshLMQ3",
+                            "value": "search:stale",
+                        }
+                    ],
+                }
+            )
+        )
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": "state/update",
+                    "messages": [
+                        {
+                            "state": "Music.AVB Stream 5.refreshLMQ3",
+                            "value": f"search:{first_uuid}",
+                        }
+                    ],
+                }
+            )
+        )
+        await asyncio.sleep(0)
+        assert len(sent) == 2
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": sent[1][0],
+                    "messages": [
+                        {
+                            "requestId": sent[1][1][0]["requestId"],
+                            "screenArguments": {"searchReady": True},
+                            "nodes": [{"displayType": "searchList", "title": "Fall"}],
+                        }
+                    ],
+                }
+            )
+        )
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert len(sent) == 3
+        second_uuid = sent[2][1][0]["arguments"]["uuid"]
+        assert second_uuid != first_uuid
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": "state/update",
+                    "messages": [
+                        {
+                            "state": "Music.AVB Stream 5.refreshLMQ",
+                            "value": f"search:{second_uuid}",
+                        }
+                    ],
+                }
+            )
+        )
+        await asyncio.sleep(0)
+        assert len(sent) == 4
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": sent[3][0],
+                    "messages": [
+                        {
+                            "requestId": sent[3][1][0]["requestId"],
+                            "screenArguments": {"searchReady": True},
+                            "nodes": [{"displayType": "searchList", "title": "Winter"}],
+                        }
+                    ],
+                }
+            )
+        )
+        return await asyncio.gather(*tasks)
+
+    results = asyncio.run(run())
+    assert [result["nodes"][0]["title"] for result in results] == ["Fall", "Winter"]
+    assert len(sent) == 4
+
+
+def test_multiple_music_searches_same_component_are_queued_without_cross_talk():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]]]] = []
+
+    async def run():
+        async def fake_request(uri, messages, *, include_identity):
+            sent.append((uri, messages))
+            if len(sent) % 2 == 0:
+                return
+            client._handle_frame(
+                _frame(
+                    {
+                        "URI": uri,
+                        "messages": [
+                            {
+                                "requestId": messages[0]["requestId"],
+                                "screenArguments": {"searchReady": False},
+                                "nodes": [],
+                            }
+                        ],
+                    }
+                )
+            )
+
+        client._request_music = fake_request  # type: ignore[assignment]
+        terms = ["Fall", "Chappell Roan", "Sabrina Carpenter"]
+        tasks = [
+            asyncio.create_task(client.async_search_music("Music", "AVB Stream 5", term))
+            for term in terms
+        ]
+        results = []
+        for index, term in enumerate(terms):
+            await asyncio.sleep(0)
+            initial = index * 2
+            assert len(sent) == initial + 1
+            search_uuid = sent[initial][1][0]["arguments"]["uuid"]
             client._handle_frame(
                 _frame(
                     {
                         "URI": "state/update",
                         "messages": [
                             {
-                                "state": "Music.AVB Stream 5.refreshLMQ3",
+                                "state": "Music.AVB Stream 5.refreshLMQ",
+                                "value": f"search:{search_uuid}",
+                            }
+                        ],
+                    }
+                )
+            )
+            await asyncio.sleep(0)
+            retry = initial + 1
+            assert len(sent) == retry + 1
+            client._handle_frame(
+                _frame(
+                    {
+                        "URI": sent[retry][0],
+                        "messages": [
+                            {
+                                "requestId": sent[retry][1][0]["requestId"],
+                                "screenArguments": {"searchReady": True},
+                                "nodes": [{"displayType": "searchList", "title": term}],
+                            }
+                        ],
+                    }
+                )
+            )
+            results.append(await tasks[index])
+        return results
+
+    results = asyncio.run(run())
+    assert [result["nodes"][0]["title"] for result in results] == [
+        "Fall",
+        "Chappell Roan",
+        "Sabrina Carpenter",
+    ]
+
+
+def test_music_searches_for_different_components_remain_concurrent():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]]]] = []
+    initial_components: set[str] = set()
+
+    async def run():
+        async def fake_request(uri, messages, *, include_identity):
+            sent.append((uri, messages))
+            component = uri.split("/", 2)[1]
+            if component in initial_components:
+                return
+            initial_components.add(component)
+            client._handle_frame(
+                _frame(
+                    {
+                        "URI": uri,
+                        "messages": [
+                            {
+                                "requestId": messages[0]["requestId"],
+                                "screenArguments": {"searchReady": False},
+                                "nodes": [],
+                            }
+                        ],
+                    }
+                )
+            )
+
+        client._request_music = fake_request  # type: ignore[assignment]
+        tasks = [
+            asyncio.create_task(client.async_search_music(component, "AVB Stream 5", term))
+            for component, term in (("Music", "Fall"), ("Other Music", "Winter"))
+        ]
+        await asyncio.sleep(0)
+        assert len(sent) == 2
+        for index, (component, _) in enumerate((("Music", "Fall"), ("Other Music", "Winter"))):
+            search_uuid = sent[index][1][0]["arguments"]["uuid"]
+            client._handle_frame(
+                _frame(
+                    {
+                        "URI": "state/update",
+                        "messages": [
+                            {
+                                "state": f"{component}.AVB Stream 5.refreshLMQ3",
                                 "value": f"search:{search_uuid}",
                             }
                         ],
@@ -1201,16 +1398,17 @@ def test_concurrent_music_searches_correlate_refresh_and_second_response():
                 )
             )
         await asyncio.sleep(0)
-        for _, messages in sent[2:]:
+        assert len(sent) == 4
+        for index, term in ((2, "Fall"), (3, "Winter")):
             client._handle_frame(
                 _frame(
                     {
-                        "URI": sent[0][0],
+                        "URI": sent[index][0],
                         "messages": [
                             {
-                                "requestId": messages[0]["requestId"],
+                                "requestId": sent[index][1][0]["requestId"],
                                 "screenArguments": {"searchReady": True},
-                                "nodes": [],
+                                "nodes": [{"displayType": "searchList", "title": term}],
                             }
                         ],
                     }
@@ -1219,8 +1417,77 @@ def test_concurrent_music_searches_correlate_refresh_and_second_response():
         return await asyncio.gather(*tasks)
 
     results = asyncio.run(run())
-    assert len(results) == 2
-    assert len(sent) == 4
+    assert [result["nodes"][0]["title"] for result in results] == ["Fall", "Winter"]
+
+
+def test_cancelled_queued_music_search_does_not_affect_active_search():
+    client = SavantClient("10.0.0.5", 12345)
+    sent: list[tuple[str, list[dict[str, object]]]] = []
+
+    async def run():
+        async def fake_request(uri, messages, *, include_identity):
+            sent.append((uri, messages))
+            if len(sent) % 2 == 0:
+                return
+            client._handle_frame(
+                _frame(
+                    {
+                        "URI": uri,
+                        "messages": [
+                            {
+                                "requestId": messages[0]["requestId"],
+                                "screenArguments": {"searchReady": False},
+                                "nodes": [],
+                            }
+                        ],
+                    }
+                )
+            )
+
+        client._request_music = fake_request  # type: ignore[assignment]
+        first = asyncio.create_task(client.async_search_music("Music", "AVB Stream 5", "Fall"))
+        await asyncio.sleep(0)
+        second = asyncio.create_task(
+            client.async_search_music("Music", "AVB Stream 5", "Cancelled")
+        )
+        await asyncio.sleep(0)
+        second.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await second
+        assert len(sent) == 1
+        search_uuid = sent[0][1][0]["arguments"]["uuid"]
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": "state/update",
+                    "messages": [
+                        {
+                            "state": "Music.AVB Stream 5.refreshLMQ",
+                            "value": f"search:{search_uuid}",
+                        }
+                    ],
+                }
+            )
+        )
+        await asyncio.sleep(0)
+        client._handle_frame(
+            _frame(
+                {
+                    "URI": sent[1][0],
+                    "messages": [
+                        {
+                            "requestId": sent[1][1][0]["requestId"],
+                            "screenArguments": {"searchReady": True},
+                            "nodes": [{"displayType": "searchList", "title": "Fall"}],
+                        }
+                    ],
+                }
+            )
+        )
+        return await first
+
+    result = asyncio.run(run())
+    assert result["nodes"][0]["title"] == "Fall"
 
 
 if __name__ == "__main__":

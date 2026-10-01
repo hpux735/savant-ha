@@ -284,6 +284,15 @@ new `requestId`. Search results are `displayType:"searchList"` nodes. Follow the
 `query:"browse"|"browseSearch"` on the matching endpoint; a recent-search track submitted
 to `/browse` produced matching `CurrentSongName`, `CurrentPauseStatus:false`, and elapsed-time
 state. Non-`all` filters and paging beyond `offset:0` remain unsupported.
+
+The integration serializes typed searches per Savant client, component, and
+`SVC_AV_SAVANTMUSIC` service. The host's search context is mutable: concurrent requests on
+the same component/service can otherwise overwrite readiness state and cause one request
+to miss its refresh. The lock is deliberately not global and does not include the logical
+component, so unrelated Savant components can search concurrently while endpoints sharing
+one component/service are queued. Each queued request creates its UUID and registers its
+refresh waiter only after it owns the lock and immediately before sending `/search`; stale
+refresh values cannot satisfy a later request.
 Browse-node `artworkKey` values use the same `session/fileDownload` wrapper as now-playing art,
 with `type:"thumbnailArtwork"`; serve the returned JPEG or PNG through Home Assistant's browse-image
 proxy without exposing the opaque artwork key in media IDs.

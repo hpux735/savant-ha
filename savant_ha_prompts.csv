@@ -480,3 +480,54 @@ Please investigate and fix the search readiness protocol:
 - a search result that becomes available before the refresh event.
 Also review the integration capability declaration. The entity currently advertises search_media, but the search backend times out while browsing the same player works and exposes the FALL media item. If search cannot be made reliable, do not advertise search support until the readiness protocol is fixed."
 1790888485766,2026-10-01T19:41:25.766Z,,,"fix the malformed CSV row.  Use the opencode session database for authritative record of history if necessary"
+1790889622265,2026-10-01T19:59:42.265Z,,Fix concurrent music-search handling,"Please fix concurrent music-search handling in the custom Home Assistant `savant_ha` integration.
+
+The integration now handles individual `media_player.search_media` requests successfully, but concurrent searches against the same Savant Music player appear unreliable.
+
+Observed behavior:
+
+- Entity: `media_player.office_music`
+- Component: `Music`
+- Savant service: `SVC_AV_SAVANTMUSIC`
+- Individual searches such as `Fall`, `Chappell Roan`, and `Sabrina Carpenter` succeed.
+- When several searches are issued concurrently against the same entity, one may succeed while others return:
+  `Savant music search did not become ready`
+- The failure occurs while waiting for the search refresh/readiness event in `savant_client.py:825`.
+- The integration sends searches through the same Savant path, for example:
+  `music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search`
+
+Please investigate and fix concurrency safely:
+
+1. Determine whether Savant Music supports only one active search per component/service.
+2. If searches must be serialized, add a per-component or per-Savant-service async lock/queue.
+3. Ensure each queued request waits for its own response and readiness event.
+4. Correlate refresh events with the correct search request, component, logical component, service, and request identifier where available.
+5. Register event listeners before sending each search command to avoid races.
+6. Prevent one search timeout or error from cancelling or corrupting another search.
+7. Ensure stale refresh events from an earlier request cannot satisfy a later request.
+8. Preserve independent concurrency across unrelated Savant components where safe.
+9. Add useful diagnostic logging containing:
+   - search query;
+   - component and logical component;
+   - Savant service path;
+   - request/correlation ID;
+   - queue depth;
+   - readiness event received;
+   - timeout duration;
+   - response/result state.
+10. Return a meaningful Home Assistant `SearchError` on failure rather than an opaque HTTP 500.
+
+Add regression tests covering:
+
+- One successful search.
+- Two concurrent searches for the same component.
+- Multiple concurrent searches for the same component.
+- Concurrent searches for different components.
+- A delayed first search followed by a second search.
+- A stale readiness event.
+- A missing readiness event and timeout.
+- A Savant error response.
+- Cancellation of one queued request without affecting the remaining queue.
+- Correct result-to-query association for every completed request.
+
+Please also document whether the fix serializes searches globally, per hub, per component, or per Savant music service, and why."
