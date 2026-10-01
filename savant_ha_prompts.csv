@@ -408,7 +408,7 @@ Before implementation, summarize how the current Savant data model represents se
 1790381809738,2026-09-26T00:16:49.738Z,,,"Bug: Savant media_player returns HTTP 500 for standard transport services. The Savant integration's media_player entity accepts some service calls but returns 500 Internal Server Error for others, instead of a proper validation error. This breaks voice/MCP clients, which cannot distinguish ""unsupported"" from ""backend broken"". Entity in question: media_player.office_music (Savant Music), HA <HA_URL>. Reproductions (HA REST): POST /api/services/media_player/turn_off with body {""entity_id"": [""media_player.office_music""]} -> HTTP 500; POST /api/services/media_player/media_stop with body {""entity_id"": [""media_player.office_music""]} -> HTTP 500. Observed at 2026-09-25 ~23:34:55Z and 23:35:40Z respectively. Both failed within 62-64 ms, so this looks like an unhandled code path rather than a device timeout. browse_media, search_media, play_media, and media_pause all return 200 against the same entity. Requested fixes: 1. Implement turn_off and media_stop for the Savant player, or 2. If they are genuinely unsupported, raise a ServiceValidationError / return a 4xx so clients get a clear ""not supported"" signal rather than a 500. 3. Make supported_features accurately reflect callable services. The entity advertises bits that suggest transport support; clients use that bitmask to decide what to call, so advertising a service that 500s is worse than omitting the bit. 4. Check for any other standard media_player services that similarly 500, and audit that all transport commands (turn_on, turn_off, media_play, media_pause, media_stop, media_next_track, media_previous_track) either work or return a clean validation error. Secondary issue (causes client churn): the opaque media_content_id values returned by browse_media change on every call. Two consecutive browses of the same root returned identical titles/ordering but completely different IDs for every node, including all 50 Pandora stations. Stable identifiers across calls (or documented instability) would prevent clients from re-browsing the entire provider hierarchy. If IDs are inherently ephemeral, please document that so upstream clients can plan for it. Expected outcome: standard transport services either work or fail with a 4xx/validation error, never a 500, and supported_features matches reality."
 1790383880539,2026-09-26T00:51:20.539Z,,,commit and push
 1790698324294,2026-09-29T16:12:04.294Z,,,"the reverse engineering doc was updated with information about playing playlists normally and via shuffle.  Look into the integration and ensure that when a user is browing the media tree that playlist entries that support direct playback (not just starting the first song of a playlist) are marked as playable.  Also, see if there's an idiomatic way to handle shuffle."
-1790698813482,2026-09-29T16:20:13.482Z,,,the docs were updated, hopefully that helps with shuffle behavior
+1790698813482,2026-09-29T16:20:13.482Z,,,"the docs were updated, hopefully that helps with shuffle behavior"
 1790699075413,2026-09-29T16:24:35.413Z,,,commit and push
 1790705088790,2026-09-29T18:04:48.790Z,,,"I think my home assistant has been updated with this change (631b5ac).  I'm not seeing shuffle advertised (check the Fall playlist on Amazon Music) on playlists that should support it.  Can you look into it?"
 1790705256765,2026-09-29T18:07:36.765Z,,,"On the savant app, I can click ""shuffle"" on the playlist, though"
@@ -421,3 +421,62 @@ Before implementation, summarize how the current Savant data model represents se
 1790707876107,2026-09-29T18:51:16.107Z,,,commit and push
 1790708378168,2026-09-29T18:59:38.168Z,,,"there are now two entries in the playlist display with the name of the playlist.  Am I to assume these are the play list and shuffle list entries?"
 1790708685627,2026-09-29T19:04:45.627Z,,,commit and push
+1790887838579,2026-10-01T19:30:38.579Z,,Fix Savant Music search readiness,"You are debugging the custom Home Assistant `savant_ha` integration.
+
+Please fix the `media_player.search_media` failure for Savant Music.
+
+Observed failure:
+
+- Home Assistant service call:
+  `media_player.search_media`
+- Entity:
+  `media_player.office_music`
+- Search query:
+  `Fall`
+- Savant command sent:
+  `music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search`
+- Savant command was sent successfully at:
+  `2026-10-01 13:22:21.617`
+- `savant_client.py:825` waits for a `refresh` event using:
+  `asyncio.wait_for(refresh, MUSIC_SEARCH_READY_TIMEOUT)`
+- The refresh event never arrives before the timeout.
+- `savant_client.py:836` raises:
+  `SavantError(""Savant music search did not become ready"")`
+- `media_player.py:502` converts it to:
+  `SearchError(""Savant music search did not become ready"")`
+- Home Assistant returns HTTP 500 from `media_player.search_media`.
+
+Relevant traceback:
+
+```text
+/config/custom_components/savant_ha/savant_client.py:825
+    await asyncio.wait_for(refresh, MUSIC_SEARCH_READY_TIMEOUT)
+
+TimeoutError
+
+/config/custom_components/savant_ha/savant_client.py:836
+    raise SavantError(""Savant music search did not become ready"") from err
+
+/config/custom_components/savant_ha/media_player.py:498
+    result = await self.hub.client.async_search_music(...)
+
+/config/custom_components/savant_ha/media_player.py:502
+    raise SearchError(str(err) or ""Savant media search failed"") from err
+Please investigate and fix the search readiness protocol:
+1. Determine what Savant response or event should signal that the music search is ready.
+2. Verify whether the search command returns an immediate response, a delayed event, or updates a separate state/property.
+3. Confirm that the listener is subscribed before sending the search command, avoiding a race.
+4. Confirm that the refresh event is filtered by the correct component, logical component, service, request ID, or correlation identifier.
+5. Check whether AVB Stream 5 or SVC_AV_SAVANTMUSIC requires a different readiness signal than other music components.
+6. Handle delayed, missing, malformed, or error responses without producing an opaque HTTP 500.
+7. Return a structured Home Assistant SearchError with the actual Savant failure or timeout reason.
+8. Add regression tests for:
+- successful search readiness;
+- delayed readiness;
+- missing readiness timeout;
+- Savant error response;
+- unrelated refresh events;
+- multiple concurrent searches;
+- a search result that becomes available before the refresh event.
+Also review the integration capability declaration. The entity currently advertises search_media, but the search backend times out while browsing the same player works and exposes the FALL media item. If search cannot be made reliable, do not advertise search support until the readiness protocol is fixed."
+1790888485766,2026-10-01T19:41:25.766Z,,,"fix the malformed CSV row.  Use the opencode session database for authritative record of history if necessary"

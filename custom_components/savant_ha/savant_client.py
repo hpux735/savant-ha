@@ -819,11 +819,12 @@ class SavantClient:
                 client_type="android",
                 include_identity=False,
             )
+            self._raise_music_search_error(result)
             screen_arguments = result.get("screenArguments")
-            if isinstance(screen_arguments, dict) and screen_arguments.get("searchReady") is True:
+            if self._music_search_is_ready(result, screen_arguments):
                 return result
             await asyncio.wait_for(refresh, MUSIC_SEARCH_READY_TIMEOUT)
-            return await self._async_music_request(
+            result = await self._async_music_request(
                 component,
                 logical_component,
                 operation="search",
@@ -832,10 +833,39 @@ class SavantClient:
                 client_type="android",
                 include_identity=False,
             )
+            self._raise_music_search_error(result)
+            return result
         except TimeoutError as err:
-            raise SavantError("Savant music search did not become ready") from err
+            raise SavantError(
+                f"Savant music search timed out waiting for refreshLMQ/refreshLMQ3 "
+                f"for {component}.{logical_component}"
+            ) from err
         finally:
             self._pending_music_search_refresh.pop((prefix, search_uuid), None)
+
+    @staticmethod
+    def _music_search_is_ready(
+        result: dict[str, Any], screen_arguments: Any
+    ) -> bool:
+        """Accept the captured ready flag or results returned ahead of the refresh."""
+        if isinstance(screen_arguments, dict) and screen_arguments.get("searchReady") is True:
+            return True
+        nodes = result.get("nodes")
+        return isinstance(nodes, list) and any(
+            isinstance(node, dict) and node.get("displayType") == "searchList"
+            for node in nodes
+        )
+
+    @staticmethod
+    def _raise_music_search_error(result: dict[str, Any]) -> None:
+        """Turn a Savant search failure response into an actionable client error."""
+        success = result.get("success")
+        error = result.get("error")
+        reason = result.get("errorReason") or result.get("message")
+        code = result.get("errorCode")
+        if success is False or error not in (None, False, "") or reason or code not in (None, 0, "0"):
+            detail = reason or error or (f"error code {code}" if code is not None else "unknown error")
+            raise SavantError(f"Savant music search failed: {detail}")
 
     async def async_follow_music_node(
         self,
@@ -1291,12 +1321,15 @@ class SavantClient:
 
     def _handle_music_search_refresh(self, state: str, value: Any) -> None:
         """Resolve typed-search readiness from the observed refresh state families."""
-        if not (state.endswith(".refreshLMQ") or state.endswith(".refreshLMQ3")):
-            return
         if not isinstance(value, str):
             return
         for (prefix, search_uuid), future in self._pending_music_search_refresh.items():
-            if state.startswith(prefix) and search_uuid in value and not future.done():
+            expected_states = {f"{prefix}refreshLMQ", f"{prefix}refreshLMQ3"}
+            if (
+                state in expected_states
+                and value in {search_uuid, f"search:{search_uuid}"}
+                and not future.done()
+            ):
                 future.set_result(None)
 
     def _emit_rooms(self, rooms: set[str]) -> None:
