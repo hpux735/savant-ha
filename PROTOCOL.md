@@ -293,6 +293,10 @@ component, so unrelated Savant components can search concurrently while endpoint
 one component/service are queued. Each queued request creates its UUID and registers its
 refresh waiter only after it owns the lock, explicitly re-registers the two readiness keys,
 and then sends `/search`; stale refresh values cannot satisfy a later request.
+On the current host, a completed search leaves the browser/search session mutable: a second
+search in the same browser session can remain unready, while opening the browser again first
+calls `getRoot` and makes the next search fast. The integration therefore sends a correlated
+`getRoot` before subsequent searches on the same logical endpoint to reset that session.
 Browse-node `artworkKey` values use the same `session/fileDownload` wrapper as now-playing art,
 with `type:"thumbnailArtwork"`; serve the returned JPEG or PNG through Home Assistant's browse-image
 proxy without exposing the opaque artwork key in media IDs.

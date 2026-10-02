@@ -1197,11 +1197,23 @@ def test_search_music_ignores_unrelated_refresh_and_times_out(monkeypatch):
 def test_concurrent_music_searches_same_component_are_serialized_and_correlated():
     client = SavantClient("10.0.0.5", 12345)
     sent: list[tuple[str, list[dict[str, object]]]] = []
+    search_sent: list[tuple[str, list[dict[str, object]]]] = []
 
     async def run():
         async def fake_request(uri, messages, *, include_identity):
             sent.append((uri, messages))
-            if len(sent) % 2 == 0:
+            if uri.endswith("/getRoot"):
+                client._handle_frame(
+                    _frame(
+                        {
+                            "URI": uri,
+                            "messages": [{"requestId": messages[0]["requestId"], "nodes": []}],
+                        }
+                    )
+                )
+                return
+            search_sent.append((uri, messages))
+            if len(search_sent) % 2 == 0:
                 return
             client._handle_frame(
                 _frame(
@@ -1224,8 +1236,8 @@ def test_concurrent_music_searches_same_component_are_serialized_and_correlated(
             for term in ("Fall", "Winter")
         ]
         await asyncio.sleep(0)
-        assert len(sent) == 1
-        first_uuid = sent[0][1][0]["arguments"]["uuid"]
+        assert len(search_sent) == 1
+        first_uuid = search_sent[0][1][0]["arguments"]["uuid"]
         client._handle_frame(
             _frame(
                 {
@@ -1253,14 +1265,14 @@ def test_concurrent_music_searches_same_component_are_serialized_and_correlated(
             )
         )
         await asyncio.sleep(0)
-        assert len(sent) == 2
+        assert len(search_sent) == 2
         client._handle_frame(
             _frame(
                 {
-                    "URI": sent[1][0],
+                    "URI": search_sent[1][0],
                     "messages": [
                         {
-                            "requestId": sent[1][1][0]["requestId"],
+                            "requestId": search_sent[1][1][0]["requestId"],
                             "screenArguments": {"searchReady": True},
                             "nodes": [{"displayType": "searchList", "title": "Fall"}],
                         }
@@ -1270,8 +1282,8 @@ def test_concurrent_music_searches_same_component_are_serialized_and_correlated(
         )
         await asyncio.sleep(0)
         await asyncio.sleep(0)
-        assert len(sent) == 3
-        second_uuid = sent[2][1][0]["arguments"]["uuid"]
+        assert len(search_sent) == 3
+        second_uuid = search_sent[2][1][0]["arguments"]["uuid"]
         assert second_uuid != first_uuid
         client._handle_frame(
             _frame(
@@ -1287,14 +1299,14 @@ def test_concurrent_music_searches_same_component_are_serialized_and_correlated(
             )
         )
         await asyncio.sleep(0)
-        assert len(sent) == 4
+        assert len(search_sent) == 4
         client._handle_frame(
             _frame(
                 {
-                    "URI": sent[3][0],
+                    "URI": search_sent[3][0],
                     "messages": [
                         {
-                            "requestId": sent[3][1][0]["requestId"],
+                            "requestId": search_sent[3][1][0]["requestId"],
                             "screenArguments": {"searchReady": True},
                             "nodes": [{"displayType": "searchList", "title": "Winter"}],
                         }
@@ -1306,17 +1318,29 @@ def test_concurrent_music_searches_same_component_are_serialized_and_correlated(
 
     results = asyncio.run(run())
     assert [result["nodes"][0]["title"] for result in results] == ["Fall", "Winter"]
-    assert len(sent) == 4
+    assert len(search_sent) == 4
 
 
 def test_multiple_music_searches_same_component_are_queued_without_cross_talk():
     client = SavantClient("10.0.0.5", 12345)
     sent: list[tuple[str, list[dict[str, object]]]] = []
+    search_sent: list[tuple[str, list[dict[str, object]]]] = []
 
     async def run():
         async def fake_request(uri, messages, *, include_identity):
             sent.append((uri, messages))
-            if len(sent) % 2 == 0:
+            if uri.endswith("/getRoot"):
+                client._handle_frame(
+                    _frame(
+                        {
+                            "URI": uri,
+                            "messages": [{"requestId": messages[0]["requestId"], "nodes": []}],
+                        }
+                    )
+                )
+                return
+            search_sent.append((uri, messages))
+            if len(search_sent) % 2 == 0:
                 return
             client._handle_frame(
                 _frame(
@@ -1343,8 +1367,8 @@ def test_multiple_music_searches_same_component_are_queued_without_cross_talk():
         for index, term in enumerate(terms):
             await asyncio.sleep(0)
             initial = index * 2
-            assert len(sent) == initial + 1
-            search_uuid = sent[initial][1][0]["arguments"]["uuid"]
+            assert len(search_sent) == initial + 1
+            search_uuid = search_sent[initial][1][0]["arguments"]["uuid"]
             client._handle_frame(
                 _frame(
                     {
@@ -1360,14 +1384,14 @@ def test_multiple_music_searches_same_component_are_queued_without_cross_talk():
             )
             await asyncio.sleep(0)
             retry = initial + 1
-            assert len(sent) == retry + 1
+            assert len(search_sent) == retry + 1
             client._handle_frame(
                 _frame(
                     {
-                        "URI": sent[retry][0],
+                        "URI": search_sent[retry][0],
                         "messages": [
                             {
-                                "requestId": sent[retry][1][0]["requestId"],
+                                "requestId": search_sent[retry][1][0]["requestId"],
                                 "screenArguments": {"searchReady": True},
                                 "nodes": [{"displayType": "searchList", "title": term}],
                             }

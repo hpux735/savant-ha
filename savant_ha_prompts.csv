@@ -560,3 +560,172 @@ Please also document whether the fix serializes searches globally, per hub, per 
 2026-10-02 13:05:04.844 WARNING (MainThread) [custom_components.savant_ha] Savant music search timed out query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=9c204dad-3889-451a-be08-27ecff328e73 timeout=15.0s
 2026-10-02 13:05:14.852 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
 2026-10-02 13:05:44.850 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))"
+1790972966391,2026-10-02T18:29:26.391Z,,,"Ok, so, if I start a new browse session with the music server and search the first time, it works great, and it's fast.  Then if I dismiss that search and try again, it just spins.  If I close that browse window entirely, and open it again search is again very fast.
+
+2026-10-02 13:22:51.898 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:51.905 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:51.909 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:51.914 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:54.915 DEBUG (MainThread) [custom_components.savant_ha] Savant file transfer timed out
+2026-10-02 13:22:54.916 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:56.725 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:22:56.725 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:22:56.725 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=24e0cfd3-a39c-40fb-97c9-43f2d4217ede
+2026-10-02 13:22:56.725 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:22:56.727 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=42325f63d4794403b583d1eb364c2c74
+2026-10-02 13:22:56.775 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:22:56.775 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Lilly Allen' correlation_id=24e0cfd3-a39c-40fb-97c9-43f2d4217ede ready=True result_nodes=22
+2026-10-02 13:22:57.918 DEBUG (MainThread) [custom_components.savant_ha] Savant file transfer timed out
+2026-10-02 13:22:57.918 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:57.925 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:57.934 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:57.938 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:57.942 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:22:57.942 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:57.946 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:58.295 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:58.584 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:58.705 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:58.830 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:59.013 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:59.305 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:59.310 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:59.623 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:22:59.796 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:23:00.107 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:23:00.268 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:23:00.289 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:23:00.458 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:23:00.538 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:23:11.265 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:23:11.265 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:23:11.266 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=790170cc-59f3-4cc0-8ba4-963dc8c35c1a
+2026-10-02 13:23:11.266 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:23:11.267 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=77e7bed165c341c0ae08a239ac6d53fb
+2026-10-02 13:23:11.275 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:23:11.276 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Em Beihold' correlation_id=790170cc-59f3-4cc0-8ba4-963dc8c35c1a ready=False result_nodes=malformed
+2026-10-02 13:23:15.043 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-02 13:23:22.501 ERROR (MainThread) [homeassistant] Error doing job: Task exception was never retrieved (task: None)
+Traceback (most recent call last):
+  File (/usr/src/homeassistant/homeassistant/helpers/discovery_flow.py, line 133, in _async_start
+    await gather_with_limited_concurrency(FLOW_INIT_LIMIT, *init_coros)
+  File (/usr/src/homeassistant/homeassistant/util/async_.py, line 111, in gather_with_limited_concurrency
+    return await gather(
+           ^^^^^^^^^^^^^
+    ...<2 lines>...
+    )
+  File (/usr/src/homeassistant/homeassistant/util/async_.py, line 109, in sem_task
+    return await task
+           ^^^^^^^^^^
+  File (/usr/src/homeassistant/homeassistant/config_entries.py, line 1563, in async_init
+    flow, result = await self._async_init(flow_id, handler, context, data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File (/usr/src/homeassistant/homeassistant/config_entries.py, line 1627, in _async_handle_step
+    result = await getattr(flow, method)(user_input)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File (/usr/src/homeassistant/homeassistant/components/kegtron/config_flow.py, line 37, in async_step_bluetooth
+    if not device.supported(discovery_info):
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File (/usr/local/lib/python3.14/site-packages/bluetooth_sensor_state_data/__init__.py, line 84, in supported
+    self._start_update(data)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File (/usr/local/lib/python3.14/site-packages/kegtron_ble/parser.py, line 97, in _start_update
+    self._process_update(data)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File (/usr/local/lib/python3.14/site-packages/kegtron_ble/parser.py, line 117, in _process_update
+    port_name = str(port_name.decode(""utf-8"").rstrip(""\x00""))
+                    ~~~~~~~~~~~~~~~~~^^^^^^^^^
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xa5 in position 0: invalid start byte
+2026-10-02 13:23:36.780 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Em Biehold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=2
+2026-10-02 13:23:41.278 WARNING (MainThread) [custom_components.savant_ha] Savant music search timed out query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=790170cc-59f3-4cc0-8ba4-963dc8c35c1a timeout=30.0s
+2026-10-02 13:23:41.279 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Em Biehold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=2
+2026-10-02 13:23:41.279 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Em Biehold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=25bebfc7-e98b-44d0-9d6c-0bc029a08b9d
+2026-10-02 13:23:41.279 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:23:41.281 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=cdd1be140f4348808a7eeb58a366bc62
+2026-10-02 13:23:41.288 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:23:41.289 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Em Biehold' correlation_id=25bebfc7-e98b-44d0-9d6c-0bc029a08b9d ready=False result_nodes=malformed
+2026-10-02 13:23:44.690 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=2
+2026-10-02 13:23:53.340 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=3
+2026-10-02 13:24:11.289 WARNING (MainThread) [custom_components.savant_ha] Savant music search timed out query='Em Biehold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=25bebfc7-e98b-44d0-9d6c-0bc029a08b9d timeout=30.0s
+2026-10-02 13:24:11.290 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=2
+2026-10-02 13:24:11.290 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Em Beihold' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=19ec3536-955d-4581-ab5d-53bc11cda85a
+2026-10-02 13:24:11.290 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:24:11.292 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=105838155f914266b827926701176ded
+2026-10-02 13:24:11.335 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:24:11.335 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Em Beihold' correlation_id=19ec3536-955d-4581-ab5d-53bc11cda85a ready=True result_nodes=19
+2026-10-02 13:24:11.339 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=3
+2026-10-02 13:24:11.340 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=673ba2f3-eeb1-4460-8b95-8926b4ffb637
+2026-10-02 13:24:11.340 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:24:11.341 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=fa07a2689bf345e8853a1f3942cb6181
+2026-10-02 13:24:11.347 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:24:11.347 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Emancipator' correlation_id=673ba2f3-eeb1-4460-8b95-8926b4ffb637 ready=False result_nodes=malformed
+2026-10-02 13:24:14.854 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-02 13:24:41.348 WARNING (MainThread) [custom_components.savant_ha] Savant music search timed out query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=673ba2f3-eeb1-4468-8b95-8926b4ffb637 timeout=30.0s
+2026-10-02 13:24:48.912 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=getRoot service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot request_id=2b8ad5da07654b04a64767327acddad7
+2026-10-02 13:24:48.912 DEBUG (MainThread) [custom_components.savant_ha] Savant -> music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot (1 message(s))
+2026-10-02 13:24:48.959 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot (1 message(s))
+2026-10-02 13:24:49.037 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:24:49.037 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:24:49.039 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:24:53.611 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:24:53.611 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:24:53.611 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Emancipator' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=465e5137-195d-4f89-a8b9-7d1e1baafedb
+2026-10-02 13:24:53.611 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:24:53.613 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=c0223e7e145b4bb8b7c5791b728002f4
+2026-10-02 13:24:53.654 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:24:53.654 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Emancipator' correlation_id=465e5137-195d-4f89-a8b9-7d1e1baafedb ready=True result_nodes=18
+2026-10-02 13:24:53.690 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:53.699 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:53.825 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:53.910 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:54.165 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:54.595 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:54.855 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:55.143 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:55.291 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:55.370 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:55.488 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:55.604 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:24:55.832 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:05.869 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:25:05.869 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:25:05.869 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=9c329687-557e-449b-83e7-74254a440800
+2026-10-02 13:25:05.869 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:25:05.870 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=0d35f2afbc414dc9868bd19b13fc5b4f
+2026-10-02 13:25:05.878 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:25:05.878 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Benson Boone' correlation_id=9c329687-557e-449b-83e7-74254a440800 ready=False result_nodes=malformed
+2026-10-02 13:25:14.951 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-02 13:25:26.718 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-02 13:25:35.879 WARNING (MainThread) [custom_components.savant_ha] Savant music search timed out query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=9c329687-557e-449b-83e7-74254a440800 timeout=30.0s
+2026-10-02 13:25:42.481 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=getRoot service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot request_id=04ed99ad0fce4d3a9b9b1b99bbf866c4
+2026-10-02 13:25:42.481 DEBUG (MainThread) [custom_components.savant_ha] Savant -> music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot (1 message(s))
+2026-10-02 13:25:42.532 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot (1 message(s))
+2026-10-02 13:25:42.606 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:25:42.607 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:25:42.607 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:25:46.853 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:25:46.854 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:25:46.854 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Benson Boone' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=b15b4c28-74a4-4a91-a0c5-cc320dbc25d9
+2026-10-02 13:25:46.854 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:25:46.856 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=56861ef5b6d94839ae366b35258dea98
+2026-10-02 13:25:46.903 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:25:46.903 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Benson Boone' correlation_id=b15b4c28-74a4-4a91-a0c5-cc320dbc25d9 ready=True result_nodes=24
+2026-10-02 13:25:46.923 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.936 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.941 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.946 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.951 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.956 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.961 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.966 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.970 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:46.976 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.065 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.071 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.076 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.081 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.087 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.138 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.143 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.148 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:25:47.148 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))"
