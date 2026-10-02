@@ -873,6 +873,13 @@ class SavantClient:
             search_uuid,
         )
         try:
+            # Search readiness is delivered on the state bus, not the Music RPC. Re-send
+            # these exact subscriptions for every owned search so older/incomplete
+            # archive-derived entries cannot browse successfully while missing refresh
+            # events (PROTOCOL.md §5.3).
+            await self.register_state_keys(
+                {f"{prefix}refreshLMQ", f"{prefix}refreshLMQ3"}, force=True
+            )
             result = await self._async_music_request(
                 component,
                 logical_component,
@@ -1195,9 +1202,11 @@ class SavantClient:
                 [{"state": key} for key in sorted(self._subscribed_keys)],
             )
 
-    async def register_state_keys(self, keys: list[str] | set[str]) -> None:
+    async def register_state_keys(
+        self, keys: list[str] | set[str], *, force: bool = False
+    ) -> None:
         """Subscribe to additional state keys (e.g. newly discovered rooms)."""
-        new = [k for k in keys if k not in self._subscribed_keys]
+        new = [k for k in keys if force or k not in self._subscribed_keys]
         if not new or not self.connected:
             return
         self._subscribed_keys.update(new)

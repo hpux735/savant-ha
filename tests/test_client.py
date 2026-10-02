@@ -1060,6 +1060,44 @@ def test_search_music_waits_for_refresh_then_repeats_the_same_search_uuid():
     assert result["nodes"] == [{"title": "Beatles"}]
 
 
+def test_search_music_registers_refresh_states_before_sending_search():
+    client = SavantClient("10.0.0.5", 12345)
+    events: list[tuple[str, object]] = []
+
+    async def run():
+        async def fake_register(keys, *, force=False):
+            events.append(("register", (set(keys), force)))
+
+        async def fake_request(uri, messages, *, include_identity):
+            events.append(("search", uri))
+            client._handle_frame(
+                _frame(
+                    {
+                        "URI": uri,
+                        "messages": [
+                            {
+                                "requestId": messages[0]["requestId"],
+                                "screenArguments": {"searchReady": True},
+                                "nodes": [{"displayType": "searchList", "title": "Fall"}],
+                            }
+                        ],
+                    }
+                )
+            )
+
+        client.register_state_keys = fake_register  # type: ignore[assignment]
+        client._request_music = fake_request  # type: ignore[assignment]
+        return await client.async_search_music("Music", "AVB Stream 5", "Fall")
+
+    result = asyncio.run(run())
+    assert events[0] == (
+        "register",
+        ({"Music.AVB Stream 5.refreshLMQ", "Music.AVB Stream 5.refreshLMQ3"}, True),
+    )
+    assert events[1][0] == "search"
+    assert result["nodes"][0]["title"] == "Fall"
+
+
 def test_search_music_accepts_results_returned_before_refresh():
     client = SavantClient("10.0.0.5", 12345)
 

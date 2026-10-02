@@ -532,3 +532,4 @@ Add regression tests covering:
 
 Please also document whether the fix serializes searches globally, per hub, per component, or per Savant music service, and why."
 1790965878476,2026-10-02T16:31:18.476Z,,,"The timeout when searching music on the savant integration is too short.  It's common for it to take longer than 5 seconds, it seems"
+1790970989059,2026-10-02T17:56:29.059Z,,,"it's actually looking like ""Search Savant Music"" is just timing out all the time, even with 15-second waits.  Look into this and see if you can figure out why that's happening.  It's working for me in the savant app"

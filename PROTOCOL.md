@@ -291,8 +291,8 @@ the same component/service can otherwise overwrite readiness state and cause one
 to miss its refresh. The lock is deliberately not global and does not include the logical
 component, so unrelated Savant components can search concurrently while endpoints sharing
 one component/service are queued. Each queued request creates its UUID and registers its
-refresh waiter only after it owns the lock and immediately before sending `/search`; stale
-refresh values cannot satisfy a later request.
+refresh waiter only after it owns the lock, explicitly re-registers the two readiness keys,
+and then sends `/search`; stale refresh values cannot satisfy a later request.
 Browse-node `artworkKey` values use the same `session/fileDownload` wrapper as now-playing art,
 with `type:"thumbnailArtwork"`; serve the returned JPEG or PNG through Home Assistant's browse-image
 proxy without exposing the opaque artwork key in media IDs.
