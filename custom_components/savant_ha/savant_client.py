@@ -87,7 +87,9 @@ AUTH_TIMEOUT = 5.0
 ARTWORK_TIMEOUT = 3.0
 FILE_TRANSFER_TIMEOUT = 15.0
 MUSIC_BROWSE_TIMEOUT = 10.0
-MUSIC_SEARCH_READY_TIMEOUT = 5.0
+# Search refresh is asynchronous and can lag behind the initial Music RPC; keep a
+# bounded window longer than ordinary browse response latency (PROTOCOL.md §5.3).
+MUSIC_SEARCH_READY_TIMEOUT = 15.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
 # Resource guards for malformed/untrusted LAN input, not observed protocol maxima.
 _MAX_TRANSFER_BODY = 64 * 1024 * 1024
