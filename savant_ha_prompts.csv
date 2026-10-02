@@ -729,3 +729,6 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xa5 in position 0: invalid 
 2026-10-02 13:25:47.143 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
 2026-10-02 13:25:47.148 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
 2026-10-02 13:25:47.148 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))"
+1790973996064,2026-10-02T18:46:36.064Z,,,"It's getting better, but it's still not quite there yet.  I'm seeing a lot of timeouts, still.  [User supplied Savant/Home Assistant logs showing an initial search readiness timeout followed by a later retry succeeding after getRoot.]
+
+Why not always issue a getRoot when every search is issued?"

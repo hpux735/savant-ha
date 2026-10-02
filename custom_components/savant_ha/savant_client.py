@@ -534,7 +534,6 @@ class SavantClient:
         # independent (PROTOCOL.md §5.3; concurrent-search behavior is host-observed).
         self._music_search_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._music_search_queue_depth: dict[tuple[str, str], int] = {}
-        self._music_search_sessions: set[str] = set()
 
         self.on_state_update: _StateCallback | None = None
         self.on_status: _StatusCallback | None = None
@@ -836,9 +835,27 @@ class SavantClient:
                     service_path,
                     queue_depth,
                 )
-                return await self._async_search_music(
-                    component, logical_component, search_term, service_path=service_path
-                )
+                for attempt in range(2):
+                    try:
+                        return await self._async_search_music(
+                            component,
+                            logical_component,
+                            search_term,
+                            service_path=service_path,
+                            attempt=attempt + 1,
+                        )
+                    except SavantError as err:
+                        if attempt != 0 or "timed out waiting" not in str(err):
+                            raise
+                        LOGGER.warning(
+                            "Savant music search retrying after readiness timeout "
+                            "query=%r component=%s logical_component=%s service_path=%s",
+                            search_term,
+                            component,
+                            logical_component,
+                            service_path,
+                        )
+                raise AssertionError("unreachable search retry loop")
         finally:
             remaining = self._music_search_queue_depth[lock_key] - 1
             if remaining:
@@ -853,6 +870,7 @@ class SavantClient:
         search_term: str,
         *,
         service_path: str,
+        attempt: int,
     ) -> dict[str, Any]:
         """Submit the captured typed Music search flow (sibling PROTOCOL.md §8.4)."""
         search_uuid = str(uuid.uuid4())
@@ -875,26 +893,26 @@ class SavantClient:
             search_uuid,
         )
         try:
-            if prefix in self._music_search_sessions:
-                # ASSUMPTION: getRoot resets the host's mutable browser/search session.
-                # This matches the observed behavior that closing and reopening the HA
-                # browser makes the next search work, while retrying in-place does not.
-                LOGGER.debug(
-                    "Savant music search resetting browser session component=%s "
-                    "logical_component=%s service_path=%s",
-                    component,
-                    logical_component,
-                    service_path,
-                )
-                await self._async_music_request(
-                    component,
-                    logical_component,
-                    operation="getRoot",
-                    node=None,
-                    arguments=None,
-                    client_type="iPhone",
-                    include_identity=True,
-                )
+            # ASSUMPTION: getRoot resets the host's mutable browser/search session.
+            # Always issue it before searching: the server-side session can become stale
+            # after a search is dismissed, even when this client has not disconnected.
+            LOGGER.debug(
+                "Savant music search resetting browser session attempt=%d component=%s "
+                "logical_component=%s service_path=%s",
+                attempt,
+                component,
+                logical_component,
+                service_path,
+            )
+            await self._async_music_request(
+                component,
+                logical_component,
+                operation="getRoot",
+                node=None,
+                arguments=None,
+                client_type="iPhone",
+                include_identity=True,
+            )
             # Search readiness is delivered on the state bus, not the Music RPC. Re-send
             # these exact subscriptions for every owned search so older/incomplete
             # archive-derived entries cannot browse successfully while missing refresh
@@ -925,7 +943,6 @@ class SavantClient:
                 else "malformed",
             )
             if ready:
-                self._music_search_sessions.add(prefix)
                 return result
             await asyncio.wait_for(refresh, MUSIC_SEARCH_READY_TIMEOUT)
             LOGGER.debug(
@@ -955,7 +972,6 @@ class SavantClient:
                 if isinstance(result.get("nodes"), list)
                 else "malformed",
             )
-            self._music_search_sessions.add(prefix)
             return result
         except TimeoutError as err:
             LOGGER.warning(
@@ -1278,7 +1294,6 @@ class SavantClient:
             if not future.done():
                 future.set_exception(SavantConnectionError("connection lost"))
         self._pending_music_search_refresh.clear()
-        self._music_search_sessions.clear()
         if self._auth_task is not None:
             self._auth_task.cancel()
             # CancelledError is a BaseException — suppress it explicitly too.
