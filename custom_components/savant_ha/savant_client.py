@@ -87,9 +87,10 @@ AUTH_TIMEOUT = 5.0
 ARTWORK_TIMEOUT = 3.0
 FILE_TRANSFER_TIMEOUT = 15.0
 MUSIC_BROWSE_TIMEOUT = 10.0
-# Search refresh is asynchronous and can lag behind the initial Music RPC; keep a
-# bounded window longer than ordinary browse response latency (PROTOCOL.md §5.3).
-MUSIC_SEARCH_READY_TIMEOUT = 15.0
+# Search refresh is asynchronous and can lag behind the initial Music RPC; the host has
+# been observed to take about 25 seconds, so keep a bounded 30-second window
+# (PROTOCOL.md §5.3).
+MUSIC_SEARCH_READY_TIMEOUT = 30.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
 # Resource guards for malformed/untrusted LAN input, not observed protocol maxima.
 _MAX_TRANSFER_BODY = 64 * 1024 * 1024
@@ -1333,6 +1334,14 @@ class SavantClient:
             for message in messages:
                 if isinstance(message, dict) and "state" in message:
                     state = message.get("state")
+                    if isinstance(state, str) and (
+                        state.endswith(".refreshLMQ") or state.endswith(".refreshLMQ3")
+                    ):
+                        LOGGER.debug(
+                            "Savant <- music search refresh state=%s value=%r",
+                            state,
+                            _redact(message.get("value")),
+                        )
                     if isinstance(state, str) and self.on_state_update is not None:
                         self.on_state_update(state, message.get("value"))
                     if isinstance(state, str):

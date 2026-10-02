@@ -533,3 +533,30 @@ Add regression tests covering:
 Please also document whether the fix serializes searches globally, per hub, per component, or per Savant music service, and why."
 1790965878476,2026-10-02T16:31:18.476Z,,,"The timeout when searching music on the savant integration is too short.  It's common for it to take longer than 5 seconds, it seems"
 1790970989059,2026-10-02T17:56:29.059Z,,,"it's actually looking like ""Search Savant Music"" is just timing out all the time, even with 15-second waits.  Look into this and see if you can figure out why that's happening.  It's working for me in the savant app"
+1790971681301,2026-10-02T18:08:01.301Z,,,"It's still not working 2026-10-02 13:02:44.990 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-02 13:04:42.045 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=getRoot service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot request_id=873e7196a9f64db4a9f01dc37ceaa075
+2026-10-02 13:04:42.045 DEBUG (MainThread) [custom_components.savant_ha] Savant -> music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot (1 message(s))
+2026-10-02 13:04:42.086 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/getRoot (1 message(s))
+2026-10-02 13:04:42.128 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:42.140 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:42.144 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:42.147 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:42.151 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:42.155 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:45.158 DEBUG (MainThread) [custom_components.savant_ha] Savant file transfer timed out
+2026-10-02 13:04:45.159 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:45.167 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:45.173 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:45.178 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-02 13:04:48.180 DEBUG (MainThread) [custom_components.savant_ha] Savant file transfer timed out
+2026-10-02 13:04:48.181 DEBUG (MainThread) [custom_components.savant_ha] Savant transfer label is still draining after a timeout
+2026-10-02 13:04:49.834 DEBUG (MainThread) [custom_components.savant_ha] Savant music search queued query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:04:49.834 DEBUG (MainThread) [custom_components.savant_ha] Savant music search started query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search queue_depth=1
+2026-10-02 13:04:49.834 DEBUG (MainThread) [custom_components.savant_ha] Savant music search request query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=9c204dad-3889-451a-be08-27ecff328e73
+2026-10-02 13:04:49.834 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2 message(s))
+2026-10-02 13:04:49.835 DEBUG (MainThread) [custom_components.savant_ha] Savant music RPC request operation=search service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search request_id=1cf671b79b47492badc6be32a48d0f82
+2026-10-02 13:04:49.842 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search (1 message(s))
+2026-10-02 13:04:49.843 DEBUG (MainThread) [custom_components.savant_ha] Savant music search response query='Lilly Allen' correlation_id=9c204dad-3889-451a-be08-27ecff328e73 ready=False result_nodes=malformed
+2026-10-02 13:05:04.844 WARNING (MainThread) [custom_components.savant_ha] Savant music search timed out query='Lilly Allen' component=Music logical_component=AVB Stream 5 service_path=music/Music/AVB Stream 5/SVC_AV_SAVANTMUSIC/search correlation_id=9c204dad-3889-451a-be08-27ecff328e73 timeout=15.0s
+2026-10-02 13:05:14.852 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-02 13:05:44.850 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))"
