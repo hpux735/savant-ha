@@ -821,3 +821,5 @@ The full tables and examples were checked automatically against the captures. Do
 1791007348250,2026-10-03T06:02:28.250Z,,,commit and push when you're done
 1791043050778,2026-10-03T15:57:30.778Z,,Add music search timing diagnostics,"that's all that's printed in the logs, so if you need those other notifications, you'll have to add more debug logging"
 1791043193692,2026-10-03T15:59:53.692Z,,,commit and push
+1791043782853,2026-10-03T16:09:42.853Z,,Try one-second search watchdog,"I was just using a different audio zone, but the same music service.  Let's try the 1 second watchdog"
+1791043932577,2026-10-03T16:12:12.577Z,,,commit and push

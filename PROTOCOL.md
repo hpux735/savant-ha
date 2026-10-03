@@ -303,7 +303,7 @@ RPC's boolean `searchReady` and nodes array. Null nodes with false readiness are
 
 The per-client component/service lock is retained as conservative scheduling policy, not
 as a captured backend requirement. Independent components remain concurrent. Local fallback
-policy uses a three-second pending watchdog, at most six transmissions for the same UUID,
+policy uses a one-second pending watchdog, at most six transmissions for the same UUID,
 and a 30-second overall budget; these bounds are not recovered native protocol constants.
 Repeated pending responses never become empty successful results. Exhaustion is reported as
 inconclusive readiness, not a proven provider rejection. No per-search `getRoot` is sent.

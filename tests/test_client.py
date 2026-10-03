@@ -1812,7 +1812,7 @@ def test_search_music_handles_early_refresh_and_repeated_pending(monkeypatch, wr
 
 
 def test_search_music_readiness_timeout_defaults():
-    assert sc.MUSIC_SEARCH_PENDING_WATCHDOG == 3
+    assert sc.MUSIC_SEARCH_PENDING_WATCHDOG == 1
     assert sc.MUSIC_SEARCH_READY_TIMEOUT == 30
 
 

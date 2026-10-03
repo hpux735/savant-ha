@@ -90,7 +90,7 @@ FILE_TRANSFER_TIMEOUT = 15.0
 MUSIC_BROWSE_TIMEOUT = 10.0
 # Local bounds, not native protocol constants (PROTOCOL.md §5.3).
 MUSIC_SEARCH_READY_TIMEOUT = 30.0
-MUSIC_SEARCH_PENDING_WATCHDOG = 3.0
+MUSIC_SEARCH_PENDING_WATCHDOG = 1.0
 SCENE_ACTIVATION_TIMEOUT = 5.0
 # Resource guards for malformed/untrusted LAN input, not observed protocol maxima.
 _MAX_TRANSFER_BODY = 64 * 1024 * 1024
