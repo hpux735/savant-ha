@@ -155,6 +155,23 @@ These are inherited from the sibling protocol document — see `PROTOCOL.md` §7
 New climate imports honor archive `isCelsius`, range, and mode-capability fields. Legacy
 fallback devices retain the original Fahrenheit defaults.
 
+## Search diagnostics
+
+Enable DEBUG logging for `custom_components.savant_ha` to trace one HA music search:
+
+```yaml
+logger:
+  logs:
+    custom_components.savant_ha: debug
+```
+
+Search traces include queue wait, search `correlation_id`, RPC `request_id`, response
+time, retry source (`initial`, `refresh`, or `watchdog`), and final outcome/elapsed time.
+The same correlation ID spans all attempts; RPC request IDs change on each attempt.
+Refreshes with `reason=no_local_waiter` have no matching active search in this client;
+their arrival alone does not measure HA search latency. Logs include search terms, so
+review them for private information before sharing.
+
 ## Development
 
 Provenance rules — this repo's `AGENTS.md` — are mandatory: every change must be paired

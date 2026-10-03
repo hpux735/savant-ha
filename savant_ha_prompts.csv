@@ -819,3 +819,5 @@ The capture-supported core is:
 The report additionally specifies a proposed, unverified fallback policy: a three-second pending watchdog, five-second RPC timeout, twenty-second overall budget, and at most six transmissions per UUID. These are integration policy choices, not constants recovered from the native app. Timeout exhaustion is classified as inconclusive rather than a proven provider failure.
 The full tables and examples were checked automatically against the captures. Documentation and provenance updates are committed and pushed as 6750b23 — Investigate typed search readiness and repeated queries."
 1791007348250,2026-10-03T06:02:28.250Z,,,commit and push when you're done
+1791043050778,2026-10-03T15:57:30.778Z,,Add music search timing diagnostics,"that's all that's printed in the logs, so if you need those other notifications, you'll have to add more debug logging"
+1791043193692,2026-10-03T15:59:53.692Z,,,commit and push

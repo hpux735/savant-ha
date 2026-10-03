@@ -1843,5 +1843,57 @@ def test_search_music_caps_transmissions_at_six(monkeypatch):
     assert not client._pending_music_search_refresh
 
 
+@pytest.mark.parametrize("retry_source", ["initial", "refresh", "watchdog"])
+def test_music_search_debug_trace_correlates_requests_and_timings(caplog, monkeypatch, retry_source):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    monkeypatch.setattr(sc, "MUSIC_SEARCH_PENDING_WATCHDOG", 0.01)
+    client = SavantClient("10.0.0.5", 12345)
+    sent = []
+
+    async def fake_request(uri, messages, *, include_identity):
+        message = messages[0]
+        sent.append(message)
+        ready = retry_source == "initial" or len(sent) == 2
+        client._handle_frame(_frame({"URI": uri, "messages": [{
+            "requestId": message["requestId"],
+            "screenArguments": {"searchReady": ready},
+            "nodes": [] if ready else None,
+        }]}))
+        if not ready and retry_source == "refresh":
+            marker = f"search:{message['arguments']['uuid']}"
+            client._handle_frame(_frame({"URI": "state/update", "messages": [{
+                "state": "Music.AVB Stream 5.refreshLMQ3",
+                "value": json.dumps([{"from": marker, "to": marker, "time": 1}]),
+            }]}))
+
+    client._request_music = fake_request
+    assert asyncio.run(client.async_search_music("Music", "AVB Stream 5", "Example"))["nodes"] == []
+    trace = caplog.text
+    assert "queue_wait_ms=" in trace
+    assert f"retry_source={retry_source}" in trace
+    assert "rpc_elapsed_ms=" in trace
+    assert "screen_type=dict nodes_type=list" in trace
+    assert "outcome=ready" in trace
+    assert "elapsed_ms=" in trace
+    assert f"correlation_id={sent[0]['arguments']['uuid']}" in trace
+    for message in sent:
+        assert f"request_id={message['requestId']}" in trace
+    if retry_source != "initial":
+        assert "wait_ms=" in trace
+        assert "nodes_type=NoneType" in trace
+    if retry_source == "refresh":
+        assert "matched=True" in trace
+
+
+def test_music_search_refresh_without_waiter_is_logged(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    client = SavantClient("10.0.0.5", 12345)
+    client._handle_music_search_refresh(
+        "Music.AVB Stream 5.refreshLMQ3",
+        json.dumps([{"from": "search:old", "to": "search:old", "time": 1}]),
+    )
+    assert "reason=no_local_waiter active_searches=0" in caplog.text
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

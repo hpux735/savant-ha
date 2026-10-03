@@ -809,6 +809,7 @@ class SavantClient:
     ) -> dict[str, Any]:
         """Queue one search per Savant component/service, preserving other components."""
         lock_key = (component, SVC_AV_SAVANTMUSIC)
+        queued_at = time.monotonic()
         lock = self._music_search_locks.setdefault(lock_key, asyncio.Lock())
         queue_depth = self._music_search_queue_depth.get(lock_key, 0) + 1
         self._music_search_queue_depth[lock_key] = queue_depth
@@ -828,12 +829,13 @@ class SavantClient:
             async with lock:
                 LOGGER.debug(
                     "Savant music search started query=%r component=%s logical_component=%s "
-                    "service_path=%s queue_depth=%d",
+                    "service_path=%s queue_depth=%d queue_wait_ms=%.1f",
                     search_term,
                     component,
                     logical_component,
                     service_path,
-                    queue_depth,
+                    self._music_search_queue_depth[lock_key],
+                    (time.monotonic() - queued_at) * 1000,
                 )
                 return await self._async_search_music(
                     component, logical_component, search_term, service_path=service_path
@@ -855,6 +857,10 @@ class SavantClient:
     ) -> dict[str, Any]:
         """Submit the captured typed Music search flow (sibling PROTOCOL.md §8.4)."""
         search_uuid = str(uuid.uuid4())
+        started_at = time.monotonic()
+        outcome = "incomplete"
+        transmissions = 0
+        retry_source = "initial"
         arguments = {
             "filter": "all",
             "searchTerm": search_term,
@@ -889,6 +895,18 @@ class SavantClient:
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
                     raise TimeoutError
+                transmissions = attempt + 1
+                LOGGER.debug(
+                    "Savant music search submit query=%r service_path=%s correlation_id=%s "
+                    "attempt=%d retry_source=%s elapsed_ms=%.1f remaining_s=%.3f",
+                    search_term,
+                    service_path,
+                    search_uuid,
+                    transmissions,
+                    retry_source,
+                    (time.monotonic() - started_at) * 1000,
+                    remaining,
+                )
                 result = await asyncio.wait_for(
                     self._async_music_request(
                         component,
@@ -905,31 +923,48 @@ class SavantClient:
                 ready = self._music_search_is_ready(result, result.get("screenArguments"))
                 LOGGER.debug(
                     "Savant music search response query=%r correlation_id=%s attempt=%d "
-                    "ready=%s result_nodes=%s",
+                    "ready=%s result_nodes=%s elapsed_ms=%.1f",
                     search_term,
                     search_uuid,
                     attempt + 1,
                     ready,
                     len(result["nodes"]) if ready else "pending",
+                    (time.monotonic() - started_at) * 1000,
                 )
                 if ready:
+                    outcome = "ready"
                     return result
                 if attempt == 5:
                     break
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
                     raise TimeoutError
+                wait_started_at = time.monotonic()
+                LOGGER.debug(
+                    "Savant music search waiting correlation_id=%s attempt=%d "
+                    "watchdog_s=%.3f refresh_already_received=%s",
+                    search_uuid,
+                    transmissions,
+                    min(MUSIC_SEARCH_PENDING_WATCHDOG, remaining),
+                    refresh.done(),
+                )
                 try:
                     await asyncio.wait_for(
                         asyncio.shield(refresh),
                         min(MUSIC_SEARCH_PENDING_WATCHDOG, remaining),
                     )
+                    retry_source = "refresh"
                     LOGGER.debug(
-                        "Savant music search readiness received correlation_id=%s", search_uuid
+                        "Savant music search readiness received correlation_id=%s wait_ms=%.1f",
+                        search_uuid,
+                        (time.monotonic() - wait_started_at) * 1000,
                     )
                 except TimeoutError:
+                    retry_source = "watchdog"
                     LOGGER.debug(
-                        "Savant music search pending watchdog correlation_id=%s", search_uuid
+                        "Savant music search pending watchdog correlation_id=%s wait_ms=%.1f",
+                        search_uuid,
+                        (time.monotonic() - wait_started_at) * 1000,
                     )
                 if refresh.done():
                     refresh = asyncio.get_running_loop().create_future()
@@ -939,6 +974,7 @@ class SavantClient:
                 f"{search_term!r} on {service_path}; readiness is inconclusive"
             )
         except TimeoutError as err:
+            outcome = "timeout"
             LOGGER.warning(
                 "Savant music search timed out query=%r component=%s logical_component=%s "
                 "service_path=%s correlation_id=%s timeout=%.1fs",
@@ -954,7 +990,26 @@ class SavantClient:
                 f"within {MUSIC_SEARCH_READY_TIMEOUT:.1f}s for query {search_term!r} "
                 f"on {service_path}"
             ) from err
+        except SavantError as err:
+            outcome = "error"
+            LOGGER.debug(
+                "Savant music search failed correlation_id=%s reason=%s", search_uuid, err
+            )
+            raise
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
         finally:
+            LOGGER.debug(
+                "Savant music search finished query=%r service_path=%s correlation_id=%s "
+                "outcome=%s transmissions=%d elapsed_ms=%.1f",
+                search_term,
+                service_path,
+                search_uuid,
+                outcome,
+                transmissions,
+                (time.monotonic() - started_at) * 1000,
+            )
             self._pending_music_search_refresh.pop((prefix, search_uuid), None)
             self._music_search_refresh_seen.pop((prefix, search_uuid), None)
             if not refresh.done():
@@ -1043,15 +1098,32 @@ class SavantClient:
             "node": node,
             "arguments": arguments,
         }
+        started_at = time.monotonic()
+        correlation_id = arguments.get("uuid") if arguments is not None else None
         try:
             LOGGER.debug(
-                "Savant music RPC request operation=%s service_path=%s request_id=%s",
+                "Savant music RPC request operation=%s service_path=%s request_id=%s "
+                "correlation_id=%s",
                 operation,
                 uri,
                 request_id,
+                correlation_id,
             )
             await self._request_music(uri, [message], include_identity=include_identity)
-            return await asyncio.wait_for(future, MUSIC_BROWSE_TIMEOUT)
+            result = await asyncio.wait_for(future, MUSIC_BROWSE_TIMEOUT)
+            screen = result.get("screenArguments")
+            LOGGER.debug(
+                "Savant music RPC response service_path=%s request_id=%s correlation_id=%s "
+                "rpc_elapsed_ms=%.1f searchReady=%r screen_type=%s nodes_type=%s",
+                uri,
+                request_id,
+                correlation_id,
+                (time.monotonic() - started_at) * 1000,
+                screen.get("searchReady") if isinstance(screen, dict) else None,
+                type(screen).__name__,
+                type(result.get("nodes")).__name__,
+            )
+            return result
         except TimeoutError as err:
             raise SavantError(f"Savant music {operation} timed out") from err
         finally:
@@ -1458,16 +1530,28 @@ class SavantClient:
 
     def _handle_music_search_refresh(self, state: str, value: Any) -> None:
         """Resolve typed-search readiness from the observed refresh state families."""
+        if not state.endswith((".refreshLMQ", ".refreshLMQ3")):
+            return
         if not isinstance(value, str):
+            LOGGER.debug(
+                "Savant music search refresh ignored state=%s reason=non_string value_type=%s",
+                state,
+                type(value).__name__,
+            )
             return
         try:
             decoded = json.loads(value)
         except (ValueError, TypeError):
+            LOGGER.debug(
+                "Savant music search refresh ignored state=%s reason=invalid_json", state
+            )
             return
+        target_found = False
         for (prefix, search_uuid), future in self._pending_music_search_refresh.items():
             expected_states = {f"{prefix}refreshLMQ", f"{prefix}refreshLMQ3"}
             if state not in expected_states:
                 continue
+            target_found = True
             if state == f"{prefix}refreshLMQ":
                 if not isinstance(decoded, dict):
                     continue
@@ -1494,11 +1578,23 @@ class SavantClient:
             )
             seen = self._music_search_refresh_seen.get((prefix, search_uuid))
             if matched and seen is not None and (state, value) in seen:
+                LOGGER.debug(
+                    "Savant music search refresh ignored state=%s correlation_id=%s reason=duplicate",
+                    state,
+                    search_uuid,
+                )
                 continue
             if matched and seen is not None:
                 seen.add((state, value))
             if matched and not future.done():
                 future.set_result(None)
+        if not target_found:
+            LOGGER.debug(
+                "Savant music search refresh ignored state=%s reason=no_local_waiter "
+                "active_searches=%d",
+                state,
+                len(self._pending_music_search_refresh),
+            )
 
     def _emit_rooms(self, rooms: set[str]) -> None:
         rooms = {r for r in rooms if isinstance(r, str) and r}
