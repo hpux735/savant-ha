@@ -732,3 +732,90 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0xa5 in position 0: invalid 
 1790973996064,2026-10-02T18:46:36.064Z,,,"It's getting better, but it's still not quite there yet.  I'm seeing a lot of timeouts, still.  [User supplied Savant/Home Assistant logs showing an initial search readiness timeout followed by a later retry succeeding after getRoot.]
 
 Why not always issue a getRoot when every search is issued?"
+1791005123603,2026-10-03T02:45:23.603Z,,,"Music search is appearing quite unreliable again :( [User supplied Savant/Home Assistant logs showing the first readiness attempt waiting 30 seconds and the getRoot recovery attempt succeeding immediately.]"
+1791005319388,2026-10-03T02:48:39.388Z,,,"Do you want to provide a prompt to ask the reverse engineering LLM for clarifications for how search appears to be working in the packet traces?"
+1791007348249,2026-10-03T06:02:28.249Z,,Correct captured music-search readiness,"results are committed and pushed.  the summary is: Completed the investigation and documented it in MUSIC_SEARCH_INVESTIGATION.md (MUSIC_SEARCH_INVESTIGATION.md). It contains the full timestamped evidence tables, answers to all 18 questions, chronological sequences, and an explicitly labeled client retry proposal.
+I reassembled and decoded all 21 source logs. There are 40 search request/reply pairs, but only one capture contains typed searches: capture-20260918T195239-ff447cfd.ndjson, with 13 typed requests across 11 search UUIDs.
+Main conclusions
+1. getRoot is not sent before every search
+Four repeated-text submissions return searchReady:true immediately with:
+- A fresh search UUID.
+- No intervening getRoot.
+- No refresh notification referencing the new UUID.
+For example, ""Benson "" first returns pending, then a later submission of that exact text with a fresh UUID returns 23 nodes in 55 ms, without getRoot between them.
+This is consistent with result reuse, but cache semantics are unproven. It also means that “a second getRoot followed by a search worked” does not establish that getRoot caused recovery.
+Conversely, the later ""Beatles"" search still returns pending after multiple getRoot calls. No server-side reset behavior is established.
+2. The documented pending response was wrong
+All seven captured pending typed-search replies contain:
+{
+  ""screenArguments"": {
+    ""searchReady"": false,
+    ""parentSubmenu"": [""...""]
+  },
+  ""nodes"": null
+}
+nodes:null is observed pending behavior—not inherently malformed or failed. I corrected the nodes:[] example in PROTOCOL.md.
+All captured search replies have a valid screenArguments map. Missing or malformed screenArguments in the reported HA behavior remains unverified by these native captures.
+3. Both refresh families are present, with different JSON wrappers
+Exact key templates:
+<component>.<logicalComponent>.refreshLMQ
+<component>.<logicalComponent>.refreshLMQ3
+They use the same component/logical component as the search endpoint, without a service-type segment or room prefix.
+Their value fields are JSON-encoded strings. After parsing those strings:
+refreshLMQ:
+{
+  ""from"": ""search`search:<SEARCH_UUID>"",
+  ""to"": ""search`search:<SEARCH_UUID>"",
+  ""time"": 1789761269928418000
+}
+refreshLMQ3:
+[
+  {
+    ""from"": ""search:<SEARCH_UUID>"",
+    ""to"": ""search:<SEARCH_UUID>"",
+    ""time"": 38
+  }
+]
+The backtick in the first format is literal. These reference the search UUID, not the RPC requestId.
+The native app registers these keys at 19:53:28.149553 and 19:53:28.170488, approximately five seconds before its first typed search.
+Captured successful sequences
+All times below are 2026-09-18 UTC. Identifiers are consistent redacted aliases; the report supplies raw-capture line references.
+New-text search: pending → refresh → retry → results
+Time	Event
+19:53:44.053288	R14 submits ""Benson boone"" with search UUID S10
+19:53:44.299940	R14 reply: searchReady:false, nodes:null
+19:53:45.401676	refreshLMQ references S10
+19:53:46.435334	refreshLMQ3 references S10
+19:53:46.542334	R15 repeats the search with same S10, new requestId
+19:53:46.587554	R15 response begins: searchReady:true, 24 nodes
+The retry changes only requestId. No getRoot occurs between attempts. It follows refreshLMQ3 by 107 ms, but follows refreshLMQ by 1.14 seconds.
+A second successful sequence, ""Beatles"", behaves similarly: both refresh entries arrive together, followed 167.632 ms later by a same-UUID/new-requestId retry. Total initial-request-to-result time is approximately 1.19 seconds.
+This is consistent with event-driven retries, especially following refreshLMQ3. It does not prove which event is necessary or sufficient, or exclude an internal timer.
+Repeated text: immediate results without getRoot
+Time	Event
+19:53:34.005650	R06/S02 submits ""Benson ""
+19:53:34.015275	Pending reply
+19:53:35.035711	refreshLMQ references S02
+19:53:36.437400	refreshLMQ3 references S02
+19:53:37.594701	R08/S04 submits the same text with a fresh UUID
+19:53:37.649808	Ready response: 23 nodes
+There is no intervening getRoot and no refresh naming S04. A client must accept an immediately ready RPC response without waiting for a notification.
+Delays, failures, and concurrency
+- No genuine search timeout or explicit failure response is captured. The first typed query is superseded by further typing, so it cannot honestly be presented as either an isolated successful cold-first query or a failed query.
+- Older refreshes arrive after newer searches—and sometimes after newer ready results. Match the UUID, not merely the component or arrival time.
+- A reconnect re-emits an identical old refresh value. Receiving a refresh does not necessarily mean a new search completed.
+- The native app submits new UUIDs while earlier searches are awaiting notifications. That does not establish backend concurrency, but it provides no basis for requiring every earlier search to finish before submitting another.
+- Artwork traffic interleaves with refresh delivery. Causal blocking or delay is not established.
+- Every typed request uses the same four-provider array. Provider-specific readiness differences cannot be isolated.
+Recommended implementation direction
+The capture-supported core is:
+1. Register both exact refresh keys before typed queries.
+2. Submit new input with a fresh search UUID and requestId.
+3. Accept searchReady:true results immediately.
+4. Treat searchReady:false, nodes:null as pending.
+5. Parse refresh-value JSON and match the current target and search UUID.
+6. Re-query with the same search UUID and a fresh requestId, without inserting getRoot.
+7. Ignore obsolete-query events and results.
+The report additionally specifies a proposed, unverified fallback policy: a three-second pending watchdog, five-second RPC timeout, twenty-second overall budget, and at most six transmissions per UUID. These are integration policy choices, not constants recovered from the native app. Timeout exhaustion is classified as inconclusive rather than a proven provider failure.
+The full tables and examples were checked automatically against the captures. Documentation and provenance updates are committed and pushed as 6750b23 — Investigate typed search readiness and repeated queries."
+1791007348250,2026-10-03T06:02:28.250Z,,,commit and push when you're done

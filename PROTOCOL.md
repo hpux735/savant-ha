@@ -278,27 +278,35 @@ than synthesizing a playlist request. For action submission, omit only presentat
 JSON-encoded `arguments.item` string.
 Typed search is capture-verified on `/search` with `clientType:"android"`, no outer
 identity fields, and `arguments:{filter:"all",searchTerm,services:["plex","tunein",
-"amazonmusic","playlists"],uuid}`. An initial `{searchReady:false,nodes:[]}` means wait
+"amazonmusic","playlists"],uuid}`. An initial `{screenArguments:{searchReady:false},nodes:null}` means wait
 for `refreshLMQ` or `refreshLMQ3` containing that UUID, then repeat the same request with a
 new `requestId`. Search results are `displayType:"searchList"` nodes. Follow their captured
 `query:"browse"|"browseSearch"` on the matching endpoint; a recent-search track submitted
 to `/browse` produced matching `CurrentSongName`, `CurrentPauseStatus:false`, and elapsed-time
 state. Non-`all` filters and paging beyond `offset:0` remain unsupported.
 
-The integration serializes typed searches per Savant client, component, and
-`SVC_AV_SAVANTMUSIC` service. The host's search context is mutable: concurrent requests on
-the same component/service can otherwise overwrite readiness state and cause one request
-to miss its refresh. The lock is deliberately not global and does not include the logical
-component, so unrelated Savant components can search concurrently while endpoints sharing
-one component/service are queued. Each queued request creates its UUID and registers its
-refresh waiter only after it owns the lock, sends a fresh `getRoot`, explicitly re-registers
-the two readiness keys, and then sends `/search`; stale refresh values cannot satisfy a later
-request. If the readiness wait still times out, the integration performs one additional
-`getRoot` plus search attempt with a new UUID before reporting failure.
-On the current host, the browser/search session is mutable: a search can remain unready after
-the browser is dismissed, while opening the browser again first calls `getRoot` and makes the
-next search fast. The integration therefore sends a correlated `getRoot` before every search
-on the logical endpoint to reset that session.
+The sibling `MUSIC_SEARCH_INVESTIGATION.md` (commit `6750b23`) corrects earlier
+assumptions: `getRoot` reset semantics and single-active-search constraints are not
+established. Repeated-text results can return immediately without an intervening root.
+The former exact bare-UUID matcher in this integration rejected the captured refresh values;
+the absence of a matched event was not evidence that the host omitted notifications.
+
+Both exact `<component>.<logical>.refreshLMQ` and `.refreshLMQ3` keys carry JSON strings.
+`refreshLMQ` decodes to an object with `from`/`to` equal to
+`search` followed by a literal backtick followed by `search:<UUID>`.
+`refreshLMQ3` decodes to an array of objects with `from`/`to` equal to `search:<UUID>`.
+Match the complete destination marker and exact state key, not a substring or RPC requestId.
+Root refreshes and old/replayed search values must not release another search's waiter.
+On notification, repeat the typed request with the same UUID and a new requestId, without
+`getRoot`. A refresh is a retry hint, not proof that results are ready; validate the next
+RPC's boolean `searchReady` and nodes array. Null nodes with false readiness are pending.
+
+The per-client component/service lock is retained as conservative scheduling policy, not
+as a captured backend requirement. Independent components remain concurrent. Local fallback
+policy uses a three-second pending watchdog, at most six transmissions for the same UUID,
+and a 30-second overall budget; these bounds are not recovered native protocol constants.
+Repeated pending responses never become empty successful results. Exhaustion is reported as
+inconclusive readiness, not a proven provider rejection. No per-search `getRoot` is sent.
 Browse-node `artworkKey` values use the same `session/fileDownload` wrapper as now-playing art,
 with `type:"thumbnailArtwork"`; serve the returned JPEG or PNG through Home Assistant's browse-image
 proxy without exposing the opaque artwork key in media IDs.

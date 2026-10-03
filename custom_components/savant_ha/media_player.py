@@ -488,8 +488,8 @@ class SavantMediaPlayer(SavantEntity, MediaPlayerEntity):
         """Search captured Savant Music catalogs with the supported all-service scope."""
         if self._service_type != SVC_AV_SAVANTMUSIC:
             raise SearchError("Savant media search is available only for Savant Music")
-        search_term = query.search_query.strip()
-        if not search_term:
+        search_term = query.search_query
+        if not search_term.strip():
             return SearchMedia(result=[])
         # The captured endpoint supports only global filter:"all" search. Home Assistant
         # supplies the current opaque browse ID, but mapping that to a provider filter
