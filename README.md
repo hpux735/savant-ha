@@ -54,6 +54,23 @@ Settings → Devices & Services → **Add Integration** → **Savant**.
 Optional advanced settings (a cached `hostToken`, `cloudToken`/`configurationID`, or
 extra room names) live behind the integration's **Configure** button.
 
+### Existing Lutron lights
+
+When the built-in `lutron_caseta` integration (Caseta/RA2 Select) already provides lights,
+Savant setup and device refresh suggest duplicates using exact, case-insensitive names
+and matching Home Assistant area names. Whitespace differences and an area prefix in a
+light name are ignored; missing areas, ambiguous matches, disabled entities/devices, and
+disabled Lutron entries are not used. No bridge connection or device control is performed.
+
+Suggested duplicates stay visible in the picker, labeled with their Lutron entity ID,
+but start unchecked. Select them to import Savant controls too. Previously imported Savant
+lights remain checked during refresh, even if a possible Lutron duplicate is detected.
+This does not automatically delete or disable existing entities.
+
+These are name-and-area suggestions, not verified hardware matches: Savant addresses
+have no established mapping to Caseta serial numbers. Renamed or differently assigned
+lights may need manual selection. Other Lutron integrations are not matched.
+
 ## Entities (created only for the devices you import)
 
 | Platform | Device source | Entities |
@@ -172,6 +189,12 @@ Scene diagnostics distinguish these stages without logging scene names, IDs, or 
 - `Savant scene subscription sent`: the scene-list registration was sent.
 - `Savant dashboard update has no scene inventory`: a dashboard message arrived, but it
   did not contain the expected scene-list state.
+- `Savant dashboard scene candidate`: structural details of an unrecognized message,
+  including field types, whether `state` exists, and the `value` container size. Only known
+  field names and the subscribed dashboard state names are shown; other keys and values
+  are masked. Output is limited to five messages and twelve fields per message, without
+  limiting scene parsing. This distinguishes unrelated `RecentServices` replies from
+  unexpected scene-list wrappers without exposing scene contents.
 - `Savant scene inventory ignored`: the scene-list value had an unexpected type.
 - `Savant scene inventory received`: total entries, accepted unique scenes, and rejected
   or duplicate entries; zero entries means the host supplied an empty inventory.

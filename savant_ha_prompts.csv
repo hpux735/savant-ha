@@ -937,3 +937,123 @@ homeassistant.data_entry_flow.UnknownStep: Handler SavantConfigFlow doesn't supp
 1792165108410,2026-10-16T15:38:28.410Z,,Diagnose missing client-site scenes,"there's a client site that isn't loading the scenes from the savant host.  How should we diagnose this? there's nothing obvious in the logs"
 1792165714160,2026-10-16T15:48:34.160Z,,Expose native debug logging and scene diagnostics,"you are the integration, so you don't you add the ability to turn on debug logging?"
 1792165879572,2026-10-16T15:51:19.572Z,,,Commit and push
+1792166069466,2026-10-16T15:54:29.466Z,,Clarify scene diagnostic deployment,"this isn't yet the updated code, I'm running that on another host"
+1792166206155,2026-10-16T15:56:46.155Z,,Discuss Lutron duplicate-light detection,"The coolmaster detection is awesome.  Can we do something similar for lights that already exist from a lutron integration?"
+1792166305723,2026-10-16T15:58:25.723Z,,Target Caseta and RA2 Select duplicate lights,Caséta/RA2
+1792166668130,2026-10-16T16:04:28.130Z,,Inspect dashboard reply structure for missing scenes,"Ok, regarding the scenes.  New log with the new code; 2026-10-16 09:00:34.486 DEBUG (MainThread) [custom_components.savant_ha] Savant discovery: 2 control reply(ies)
+2026-10-16 09:00:47.905 INFO (MainThread) [custom_components.savant_ha] Savant probe: connecting to collect devices
+2026-10-16 09:00:47.924 INFO (MainThread) [custom_components.savant_ha] Savant TLS version=TLSv1.3 cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256)
+2026-10-16 09:00:47.924 INFO (MainThread) [custom_components.savant_ha] Savant WS connected to <HOST_IP>:62472 (subprotocol=rpm-protocol, aiohttp=3.14.4)
+2026-10-16 09:00:47.924 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/devicePresent (1 message(s))
+2026-10-16 09:00:47.935 DEBUG (MainThread) [custom_components.savant_ha] Savant <- session/deviceRecognized (1 message(s))
+2026-10-16 09:00:47.935 INFO (MainThread) [custom_components.savant_ha] Savant deviceRecognized (authentication=True)
+2026-10-16 09:00:48.029 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/authenticationRequest (1 message(s))
+2026-10-16 09:00:48.042 DEBUG (MainThread) [custom_components.savant_ha] Savant <- session/authenticationResponse (1 message(s))
+2026-10-16 09:00:48.042 INFO (MainThread) [custom_components.savant_ha] Savant login successful
+2026-10-16 09:00:48.045 DEBUG (MainThread) [custom_components.savant_ha] Savant <- featureLock (1 message(s))
+2026-10-16 09:00:48.045 DEBUG (MainThread) [custom_components.savant_ha] Savant featureLock: [{'TrueImageUnlock': {'state': 'unconfigured', 'capacityAvailable': 0, 'controllersUnlocked': 0}}]
+2026-10-16 09:00:48.132 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-16 09:00:48.202 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/dashboard/register (2 message(s))
+2026-10-16 09:00:48.204 DEBUG (MainThread) [custom_components.savant_ha] Savant scene subscription sent state=scenesAndFoldersReduced
+2026-10-16 09:00:48.204 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (1 message(s))
+2026-10-16 09:00:48.206 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:00:48.208 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:00:48.210 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:00:48.212 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (86 message(s))
+2026-10-16 09:00:48.214 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dcm/request (1 message(s))
+2026-10-16 09:00:48.216 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:00:48.218 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:00:48.221 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/dashboard/update (1 message(s))
+2026-10-16 09:00:48.221 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard update has no scene inventory
+2026-10-16 09:00:48.223 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.224 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.226 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:00:48.228 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.228 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.238 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.238 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.241 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.241 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.464 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:00:48.872 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.872 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.875 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.876 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.879 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/dashboard/update (1 message(s))
+2026-10-16 09:00:48.879 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard update has no scene inventory
+2026-10-16 09:00:48.891 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.891 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:00:48.894 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:00:48.894 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:01:07.991 DEBUG (MainThread) [custom_components.savant_ha] Savant uiconfig entity tables: {'CameraEntities': ['id', 'zoneID', 'name', 'componentName', 'logicalComponent', 'entityType', 'previewPath', 'fullscreenPath', 'previewURL', 'fullscreenURL', 'highSourceURL', 'lowSourceURL', 'highMulticastURL', 'lowMulticastURL', 'previewFormat', 'fullscreenFormat', 'highMulticastFormat', 'lowMulticastFormat', 'previewFramerate', 'fullscreenFramerate', 'previewStreamDecoder', 'fullscreenStreamDecoder', 'highMulticastStreamDecoder', 'lowMulticastStreamDecoder', 'hostname', 'username', 'password', 'cpassword', 'authentication', 'port', 'transport', 'partner', 'uriSource'], 'CameraRecorderEntities': ['id', 'zoneID', 'name', 'entityType', 'componentName', 'logicalComponent', 'IP', 'cloudRecording', 'keypressedEvent', 'motionEvent', 'noiseEvent', 'tamperEvent', 'mediaType', 'mediaStream', 'streamURL', 'username', 'password', 'authentication', 'partner'], 'DoorLockEntities': ['id', 'zoneID', 'name', 'entityType', 'addresses', 'lockCommand', 'unlockCommand', 'lockState', 'errorState', 'supportsStatus', 'supportsErrors', 'camera', 'partner', 'authentication'], 'EVChargerEntities': ['id', 'zoneID', 'name', 'ipAddress', 'address', 'startCommand', 'stopCommand', 'setRateCommand', 'linkedPM', 'linkedUID', 'linkedCircuitId', 'circuitId', 'chargerState', 'errorState', 'powerState', 'historyState', 'chargeRateState', 'chargeModeState', 'maxChargeRateState', 'minChargePowerState', 'maxChargePowerState', 'currentSessionEnergyState', 'currentSessionStartDateState', 'lastSessionEnergyState', 'lastSessionEndDateState', 'IsEVChargerConnectedState', 'IsEVChargerLinkedState', 'EVChargerScheduleState', 'partner', 'supportsErrors', 'supportsStatus', 'supportsRate'], 'EntryEntities': ['id', 'zoneID', 'name', 'entityType', 'componentName', 'logicalComponent', 'IP', 'serialNumber', 'securityCode', 'ringDuration', 'motionEvent', 'noiseEvent', 'tamperEvent', 'audioInterrupt', 'buttonConfiguration', 'authentication', 'partner', 'hasMotion', 'hasNoise', 'hasTamper', 'hasKeyPressed', 'chime'], 'FanEntities': ['id', 'zoneID', 'name', 'addresses', 'entityType', 'pressCommand', 'holdCommand', 'releaseCommand', 'togglePressCommand', 'toggleHoldCommand', 'toggleReleaseCommand', 'dimmerCommand', 'fadeTime', 'delayTime', 'stateName', 'roomLightsControl', 'orderValue', 'isSceneable'], 'GarageEntities': ['id', 'zoneID', 'name', 'addresses', 'entityType', 'toggleCommand', 'openCommand', 'stopCommand', 'closeCommand', 'openState', 'errorState', 'supportsErrors', 'supportsStatus', 'supportsStop', 'camera'], 'HVACEntities': ['id', 'zoneID', 'name', 'addresses', 'temperatureSetPoints', 'heat', 'cool', 'auto', 'humiditySetPoints', 'humidify', 'dehumidify', 'hasExternalTempSensor', 'history', 'stateName', 'tempMinRange', 'tempMaxRange', 'tempBuffer', 'isCelsius', 'homeAway', 'authentication', 'partner'], 'HotWaterHeaterEntities': ['id', 'zoneID', 'name', 'address', 'setTempCommand', 'setCapacityCommand', 'setModeCommand', 'currentSetPointState', 'currentCapacityState', 'currentModeState', 'currentTempState', 'timeToSetPointState', 'hotWaterRemainState', 'partner', 'supportsErrors'], 'LightEntities': ['id', 'zoneID', 'name', 'addresses', 'entityType', 'entitySubType', 'technology', 'pressCommand', 'holdCommand', 'releaseCommand', 'togglePressCommand', 'toggleHoldCommand', 'toggleReleaseCommand', 'dimmerCommand', 'fadeTime', 'delayTime', 'stateName', 'lightsAreOn', 'roomLightsControl', 'orderValue', 'isSceneable', 'naturalLightCapable', 'trueImageSupport', 'bleNetworkKey', 'bleGroupID', 'bleNodeID', 'isSavantLoad'], 'PoolAndSpaEntities': ['id', 'zoneID', 'name', 'entityType', 'auxiliaryNumber'], 'RemoteControlEntities': ['id', 'componentName', 'logicalComponent', 'zoneID', 'entityType', 'uid', 'buttonConfiguration'], 'SecuritySystemEntities': ['id', 'zoneID', 'name', 'componentName', 'entityType', 'partitionNumber', 'zoneNumber', 'hasBypass', 'hasLCDFeedback', 'statusState', 'bypassToggleState', 'bypassTextState', 'buttonAssignments', 'keypadLabels', 'smartPinConfig', 'emergencyLabels', 'partner'], 'ShadeEntities': ['id', 'zoneID', 'name', 'addresses', 'entityType', 'pressCommand', 'holdCommand', 'releaseCommand', 'togglePressCommand', 'toggleHoldCommand', 'toggleReleaseCommand', 'dimmerCommand', 'fadeTime', 'delayTime', 'presetNumber', 'stateName', 'sceneNumber', 'orderValue', 'isSceneable']}
+2026-10-16 09:01:08.230 INFO (MainThread) [custom_components.savant_ha] Savant uiconfig parsed 189 device(s): {'climate': 13, 'light': 100, 'cover': 19, 'media_player': 57}
+2026-10-16 09:01:08.234 INFO (MainThread) [custom_components.savant_ha] Savant probe: authorized=True auth_response=True rooms=1 hvac=0 zones=0 devices=189
+2026-10-16 09:01:12.880 DEBUG (MainThread) [custom_components.savant_ha] Finished fetching savant_ha_coordinator data in 0.000 seconds (success: True)
+2026-10-16 09:01:15.885 DEBUG (MainThread) [custom_components.savant_ha] Savant discovery: 1 control reply(ies)
+2026-10-16 09:01:15.886 INFO (MainThread) [custom_components.savant_ha] Savant host endpoint changed
+2026-10-16 09:01:15.886 INFO (MainThread) [custom_components.savant_ha] Savant control port changed 0 -> 62472
+2026-10-16 09:01:18.786 DEBUG (MainThread) [custom_components.savant_ha] Savant scene platform waiting for dashboard inventory
+2026-10-16 09:01:21.816 DEBUG (MainThread) [custom_components.savant_ha] Savant discovery: 1 control reply(ies)
+2026-10-16 09:01:21.838 INFO (MainThread) [custom_components.savant_ha] Savant TLS version=TLSv1.3 cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256)
+2026-10-16 09:01:21.838 INFO (MainThread) [custom_components.savant_ha] Savant WS connected to <HOST_IP>:62472 (subprotocol=rpm-protocol, aiohttp=3.14.4)
+2026-10-16 09:01:21.838 INFO (MainThread) [custom_components.savant_ha] Savant host connected
+2026-10-16 09:01:21.838 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/devicePresent (1 message(s))
+2026-10-16 09:01:21.889 DEBUG (MainThread) [custom_components.savant_ha] Savant <- session/deviceRecognized (1 message(s))
+2026-10-16 09:01:21.890 INFO (MainThread) [custom_components.savant_ha] Savant deviceRecognized (authentication=True)
+2026-10-16 09:01:21.988 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/authenticationRequest (1 message(s))
+2026-10-16 09:01:22.001 DEBUG (MainThread) [custom_components.savant_ha] Savant <- session/authenticationResponse (1 message(s))
+2026-10-16 09:01:22.001 INFO (MainThread) [custom_components.savant_ha] Savant login successful
+2026-10-16 09:01:22.001 INFO (MainThread) [custom_components.savant_ha] Savant discovered 1 new room(s)
+2026-10-16 09:01:22.005 DEBUG (MainThread) [custom_components.savant_ha] Savant <- featureLock (1 message(s))
+2026-10-16 09:01:22.005 DEBUG (MainThread) [custom_components.savant_ha] Savant featureLock: [{'TrueImageUnlock': {'state': 'unconfigured', 'capacityAvailable': 0, 'controllersUnlocked': 0}}]
+2026-10-16 09:01:22.006 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (21 message(s))
+2026-10-16 09:01:22.119 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-16 09:01:22.189 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/dashboard/register (2 message(s))
+2026-10-16 09:01:22.191 DEBUG (MainThread) [custom_components.savant_ha] Savant scene subscription sent state=scenesAndFoldersReduced
+2026-10-16 09:01:22.191 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (1 message(s))
+2026-10-16 09:01:22.193 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:01:22.195 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:01:22.197 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:01:22.205 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (1582 message(s))
+2026-10-16 09:01:22.210 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dcm/request (1 message(s))
+2026-10-16 09:01:22.212 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:01:22.215 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 09:01:22.219 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/dashboard/update (1 message(s))
+2026-10-16 09:01:22.219 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard update has no scene inventory
+2026-10-16 09:01:22.221 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:01:22.221 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:01:22.223 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 09:01:22.223 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 09:01:22.225 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.230 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.232 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.233 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.236 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.238 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.340 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.342 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.344 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.346 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.348 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.350 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.351 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.353 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.355 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.359 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.361 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.364 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.365 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.367 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.369 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.372 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.374 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.376 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.377 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.380 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.381 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.383 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.386 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 09:01:22.386 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.AVB Stream 5.refreshLMQ value='{""from"":""browse`browse,getRoot*"",""to"":""browse`browse,getRoot"",""time"":1792166319058314000}'
+2026-10-16 09:01:22.386 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.AVB Stream 5.refreshLMQ reason=no_local_waiter active_searches=0
+2026-10-16 09:01:22.390 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))"
+1792166983153,2026-10-16T16:09:43.153Z,,Confirm app scenes and commit pending changes,"there are scenes in the savant app with this host.  Make sure you're committed and pushed and I'll update"

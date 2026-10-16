@@ -853,7 +853,41 @@ def test_dashboard_update_without_scene_inventory_is_logged(caplog):
         "messages": [{"state": "RecentServices", "value": []}],
     }))
     assert "Savant dashboard update has no scene inventory" in caplog.text
+    assert "state_present=True state=RecentServices value_type=list value_count=0" in caplog.text
     assert seen == []
+
+
+@pytest.mark.parametrize("message", [
+    {"name": SCENES_STATE_KEY, "value": [{"id": "private-id", "name": "private-scene"}]},
+    {"private-key": "private-value", "state": "private-state", "value": "private-payload"},
+    {"state": {"private-key": "private-value"}, "value": {"private-id": "private-scene"}},
+    "private-payload",
+])
+def test_unrecognized_dashboard_messages_log_only_safe_structure(caplog, message):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    assert scene_summaries_from_messages([message]) is None
+    assert "Savant dashboard scene candidate index=0" in caplog.text
+    assert "private-" not in caplog.text
+    assert "Savant scene inventory received" not in caplog.text
+
+
+def test_dashboard_structural_logging_is_bounded(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    message = {f"private-key-{index}": "private-value" for index in range(100)}
+    assert scene_summaries_from_messages([message] * 100) is None
+    summaries = [record.message for record in caplog.records if "scene candidate" in record.message]
+    assert len(summaries) == 5
+    assert all(summary.count("<other>") == 12 for summary in summaries)
+    assert "private-" not in caplog.text
+
+
+def test_dashboard_diagnostic_limit_does_not_limit_scene_parsing(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    assert scene_summaries_from_messages(
+        [{"state": "RecentServices", "value": []}] * 10
+        + [{"state": SCENES_STATE_KEY, "value": []}]
+    ) == {}
+    assert "Savant scene inventory received entries=0" in caplog.text
 
 
 def test_scene_inventory_without_callback_is_logged(caplog):

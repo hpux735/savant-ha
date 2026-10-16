@@ -23,6 +23,7 @@ from homeassistant.config_entries import ConfigEntry, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
@@ -44,6 +45,7 @@ from .const import (
     LOGGER,
 )
 from .coolmaster import exclude_duplicate_coolmaster_devices, is_coolmaster_climate
+from .lutron import find_duplicate_lutron_lights
 from .savant_client import (
     SavantDeviceInfo,
     SavantHostInfo,
@@ -142,15 +144,28 @@ def _device_label(device: dict[str, Any]) -> str:
     return label
 
 
-def _devices_schema(devices: list[dict[str, Any]]) -> vol.Schema:
-    # A multi-select of device names (proper labels), defaulting to all selected.  The
-    # device's area is its room from the config archive (looked up, not typed).
+def _devices_schema(
+    devices: list[dict[str, Any]],
+    lutron_duplicates: dict[str, str],
+    keep_selected: set[str],
+) -> vol.Schema:
+    # Potential direct-Lutron duplicates remain visible and can be selected explicitly.
     options = [
-        {"value": device["id"], "label": _device_label(device)} for device in devices
+        {
+            "value": device["id"],
+            "label": _device_label(device) + (
+                f" · Possible Lutron duplicate: {lutron_duplicates[device['id']]}"
+                if device["id"] in lutron_duplicates else ""
+            ),
+        }
+        for device in devices
     ]
     return vol.Schema(
         {
-            vol.Required("devices", default=[d["id"] for d in devices]): selector.SelectSelector(
+            vol.Required("devices", default=[
+                d["id"] for d in devices
+                if d["id"] not in lutron_duplicates or d["id"] in keep_selected
+            ]): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=options, multiple=True)
             )
         }
@@ -176,6 +191,8 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._username: str = ""
         self._password: str = ""
         self._devices: list[dict[str, Any]] = []
+        self._lutron_duplicates: dict[str, str] = {}
+        self._keep_selected: set[str] = set()
         self._media_topology: list[dict[str, Any]] | None = None
         self._reconfigure_entry: ConfigEntry | None = None
 
@@ -249,6 +266,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 self._devices = _devices_from_info(probe)
+                self._lutron_duplicates = self._find_lutron_duplicates()
                 self._media_topology = (
                     [
                         dict(device)
@@ -269,7 +287,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     return self.async_show_form(
                         step_id="devices",
-                        data_schema=_devices_schema(self._devices),
+                        data_schema=self._devices_schema(),
                         description_placeholders={
                             "count": str(len(self._devices)),
                             "host": self._host,
@@ -304,7 +322,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Continue with the Savant device picker when direct access is unavailable."""
         return self.async_show_form(
             step_id="devices",
-            data_schema=_devices_schema(self._devices),
+            data_schema=self._devices_schema(),
             description_placeholders={"count": str(len(self._devices)), "host": self._host},
         )
 
@@ -331,7 +349,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="devices",
-            data_schema=_devices_schema(self._devices),
+            data_schema=self._devices_schema(),
             description_placeholders={"count": str(len(self._devices)), "host": self._host},
         )
 
@@ -371,6 +389,11 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 self._devices = _devices_from_info(probe)
+                self._lutron_duplicates = self._find_lutron_duplicates()
+                self._keep_selected = {
+                    device["id"]
+                    for device in self._reconfigure_entry.data.get(CONF_DEVICES, [])
+                }
                 self._media_topology = (
                     [
                         dict(device)
@@ -387,7 +410,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if self._devices:
                     return self.async_show_form(
                         step_id="reconfigure_devices",
-                        data_schema=_devices_schema(self._devices),
+                        data_schema=self._devices_schema(),
                         description_placeholders={"count": str(len(self._devices))},
                     )
                 errors["base"] = "no_devices"
@@ -408,7 +431,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self.async_show_form(
                 step_id="reconfigure_devices",
-                data_schema=_devices_schema(self._devices),
+                data_schema=self._devices_schema(),
                 description_placeholders={"count": str(len(self._devices))},
             )
         if self._reconfigure_entry is None:
@@ -433,6 +456,46 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception:  # noqa: BLE001 - discovery is best-effort
             LOGGER.exception("Savant discovery failed for %s", host)
             return None
+
+    def _devices_schema(self) -> vol.Schema:
+        return _devices_schema(self._devices, self._lutron_duplicates, self._keep_selected)
+
+    def _find_lutron_duplicates(self) -> dict[str, str]:
+        """Inspect enabled Caseta/RA2 Select lights without querying or controlling them."""
+        entries = self.hass.config_entries.async_entries("lutron_caseta")
+        entity_registry = er.async_get(self.hass)
+        device_registry = dr.async_get(self.hass)
+        area_registry = ar.async_get(self.hass)
+        lights: list[dict[str, Any]] = []
+        for entry in entries:
+            if entry.disabled_by is not None:
+                continue
+            for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+                if (
+                    entity.platform != "lutron_caseta"
+                    or not entity.entity_id.startswith("light.")
+                    or entity.disabled_by is not None
+                ):
+                    continue
+                device = device_registry.async_get(entity.device_id) if entity.device_id else None
+                if device is not None and device.disabled_by is not None:
+                    continue
+                area_id = entity.area_id or (device.area_id if device else None)
+                area = area_registry.async_get_area(area_id) if area_id else None
+                if area is None:
+                    continue
+                name = entity.name or entity.original_name
+                if not name and device is not None:
+                    name = device.name_by_user or device.name
+                if name:
+                    lights.append({
+                        "entity_id": entity.entity_id,
+                        "names": [name],
+                        "area": area.name,
+                    })
+        matches = find_duplicate_lutron_lights(self._devices, lights)
+        LOGGER.debug("Savant import suggested %d possible Lutron duplicate light(s)", len(matches))
+        return matches
 
     def _coolmaster_entries(self) -> list[ConfigEntry]:
         """Return enabled built-in CoolMasterNet config entries."""

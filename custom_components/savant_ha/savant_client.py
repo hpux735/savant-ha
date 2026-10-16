@@ -26,6 +26,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
+from itertools import islice
 from typing import Any
 
 import aiohttp
@@ -1640,8 +1641,39 @@ def scene_summaries_from_messages(messages: list[Any]) -> dict[str, dict[str, An
     The host pushes the list as the value of ``scenesAndFoldersReduced``.  An empty list
     is a valid authoritative inventory; ``None`` means this frame was unrelated or malformed.
     """
-    for message in messages:
+    for index, message in enumerate(messages):
         if not isinstance(message, dict) or message.get("state") != SCENES_STATE_KEY:
+            # Diagnostic limits/field allowlist, not alternate protocol parsing. Never
+            # log arbitrary keys or state values: these may contain site-specific names.
+            if index < 5:
+                fields = []
+                state = None
+                value = None
+                state_present = False
+                if isinstance(message, dict):
+                    safe_fields = (
+                        "state", "value", "name", "data", "payload", "scenes", "folders",
+                        SCENES_STATE_KEY, DASHBOARD_STATE_RECENT_SERVICES,
+                    )
+                    fields = [
+                        (key if key in safe_fields else "<other>", type(item).__name__)
+                        for key, item in islice(message.items(), 12)
+                    ]
+                    state_present = "state" in message
+                    state = message.get("state")
+                    value = message.get("value")
+                LOGGER.debug(
+                    "Savant dashboard scene candidate index=%d message_type=%s fields=%s "
+                    "state_present=%s state=%s value_type=%s value_count=%s",
+                    index,
+                    type(message).__name__,
+                    fields,
+                    state_present,
+                    state if state in (SCENES_STATE_KEY, DASHBOARD_STATE_RECENT_SERVICES)
+                    else f"<{type(state).__name__}>",
+                    type(value).__name__,
+                    len(value) if isinstance(value, (list, dict)) else None,
+                )
             continue
         value = message.get("value")
         if not isinstance(value, list):

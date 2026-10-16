@@ -426,3 +426,7 @@ CoolMaster setter shapes and fan auto/cycle remain uncaptured and disabled.
    does not yet re-derive them from the state-key namespace.
 7. HVAC archive metadata supplies per-entity scale/range/capability flags on new imports;
    old persisted device records may require reconfiguration to acquire those fields.
+8. No mapping from Savant light addresses to Caseta/RA2 Select device serial numbers has
+   been established. Import-time duplicate suggestions assume that an unambiguous exact
+   name-and-area match may represent the same light; this is overridable UI policy, not
+   recovered protocol identity. No Caseta backend is inferred from a state-key shape.
