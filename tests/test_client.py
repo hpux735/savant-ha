@@ -220,13 +220,8 @@ def test_post_auth_matches_observed_state_startup_order(caplog):
     assert "Savant scene subscription sent state=scenesAndFoldersReduced" in caplog.text
     assert sent == [
         ("session/fileDownload", [{"filePath": "uiconfig.tar.gz"}]),
-        (
-            "dis/dashboard/register",
-            [
-                {"state": DASHBOARD_STATE_RECENT_SERVICES},
-                {"state": SCENES_STATE_KEY},
-            ],
-        ),
+        ("dis/dashboard/register", [{"state": DASHBOARD_STATE_RECENT_SERVICES}]),
+        ("dis/dashboard/register", [{"state": SCENES_STATE_KEY}]),
         (URI_STATE_REGISTER, [{"state": "global.SonosGroups"}]),
         ("dis/userData/register", [{"state": "local.setting.update"}]),
         ("dis/userData/register", [{"state": "user.setting.update"}]),
@@ -235,6 +230,25 @@ def test_post_auth_matches_observed_state_startup_order(caplog):
         ("dcm/request", [{"request": "getMode"}]),
         ("dis/userData/register", [{"state": "global.image.update"}]),
         ("dis/userData/register", [{"state": "user.image.update"}]),
+    ]
+
+
+def test_dashboard_subscriptions_use_separate_single_state_websocket_frames():
+    client = SavantClient("example.invalid", 12345)
+    frames = []
+
+    class WebSocket:
+        closed = False
+
+        async def send_bytes(self, data):
+            frames.append(msgpack.unpackb(data, raw=False))
+
+    client._ws = WebSocket()
+    asyncio.run(client._send_dashboard_register())
+    assert [frame["URI"] for frame in frames] == ["dis/dashboard/register"] * 2
+    assert [frame["messages"] for frame in frames] == [
+        [{"state": DASHBOARD_STATE_RECENT_SERVICES}],
+        [{"state": SCENES_STATE_KEY}],
     ]
 
 

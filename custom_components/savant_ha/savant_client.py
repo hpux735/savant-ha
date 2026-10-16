@@ -1303,16 +1303,11 @@ class SavantClient:
             LOGGER.debug("Failed to register additional state keys (reconnecting?)")
 
     async def _send_dashboard_register(self) -> None:
-        # ``scenesAndFoldersReduced`` delivers the full live scene inventory, while
-        # ``RecentServices`` matches the native startup registration (PROTOCOL.md §9.1).
-        await self.request(
-            URI_DASHBOARD_REGISTER,
-            [
-                {"state": DASHBOARD_STATE_RECENT_SERVICES},
-                {"state": SCENES_STATE_KEY},
-            ],
-        )
-        LOGGER.debug("Savant scene subscription sent state=%s", SCENES_STATE_KEY)
+        # Native dashboard registrations contain one state per frame (PROTOCOL.md
+        # §5.6; sibling §6.7/§9.1). Unlike state/register, dashboard batching is unverified.
+        for state in (DASHBOARD_STATE_RECENT_SERVICES, SCENES_STATE_KEY):
+            await self.request(URI_DASHBOARD_REGISTER, [{"state": state}])
+            LOGGER.debug("Savant scene subscription sent state=%s", state)
 
     async def _send_user_data_register(self, states: tuple[str, ...]) -> None:
         """Register the observed user-data update channels."""

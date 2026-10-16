@@ -336,6 +336,14 @@ optimistically reflected until `ActiveService` changes.
 
 ### 5.6 Scenes
 Subscribe to dashboard state `scenesAndFoldersReduced` using `dis/dashboard/register`.
+The documented native scene subscription is a single-state envelope:
+`{URI:"dis/dashboard/register",messages:[{state:"scenesAndFoldersReduced"}]}`
+(outer identity fields vary by captured client). The native startup separately registers
+`RecentServices` in single-state frames. Preserve separate requests for the two states;
+the multi-state batching observed for `state/register` does not establish dashboard batching
+support (sibling `PROTOCOL.md` §6.7/§9.1, revision `7594101`). A reported host returned only
+`RecentServices` updates after a combined dashboard registration; first-entry-only host
+processing is a hypothesis, not capture-proven behavior.
 The initial `dis/dashboard/update` is the complete current scene-summary list; summaries
 include stable `id` and `name`, so integrations can reconcile scene entities as host scenes
 are created or removed. Creation was observed to push a replacement list. A deletion push
