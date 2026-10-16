@@ -1311,6 +1311,7 @@ class SavantClient:
                 {"state": SCENES_STATE_KEY},
             ],
         )
+        LOGGER.debug("Savant scene subscription sent state=%s", SCENES_STATE_KEY)
 
     async def _send_user_data_register(self, states: tuple[str, ...]) -> None:
         """Register the observed user-data update channels."""
@@ -1444,6 +1445,8 @@ class SavantClient:
                 scenes = scene_summaries_from_messages(messages)
                 if scenes is not None and self.on_scenes_update is not None:
                     self.on_scenes_update(scenes)
+                elif scenes is not None:
+                    LOGGER.debug("Savant scene inventory not delivered: no inventory callback")
         elif uri.startswith("music/"):
             self._handle_music_response(uri, messages)
         else:
@@ -1642,8 +1645,12 @@ def scene_summaries_from_messages(messages: list[Any]) -> dict[str, dict[str, An
             continue
         value = message.get("value")
         if not isinstance(value, list):
+            LOGGER.debug(
+                "Savant scene inventory ignored: expected list, value_type=%s",
+                type(value).__name__,
+            )
             return None
-        return {
+        scenes = {
             scene_id: scene
             for scene in value
             if isinstance(scene, dict)
@@ -1652,4 +1659,12 @@ def scene_summaries_from_messages(messages: list[Any]) -> dict[str, dict[str, An
             and isinstance(scene.get("name"), str)
             and scene["name"]
         }
+        LOGGER.debug(
+            "Savant scene inventory received entries=%d accepted=%d rejected_or_duplicate=%d",
+            len(value),
+            len(scenes),
+            len(value) - len(scenes),
+        )
+        return scenes
+    LOGGER.debug("Savant dashboard update has no scene inventory")
     return None

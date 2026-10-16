@@ -13,7 +13,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 from .entity import SavantEntity
 from .hub import SavantHub
 from .savant_client import SavantError
@@ -57,6 +57,7 @@ async def async_setup_entry(
 
     def _reconcile() -> None:
         if hub.scenes is None:
+            LOGGER.debug("Savant scene platform waiting for dashboard inventory")
             return
         current_ids = set(hub.scenes)
         hub_device = device_registry.async_get_device(
@@ -96,6 +97,13 @@ async def async_setup_entry(
                 scenes[scene._scene_id] = scene
             hub.mark_created([_marker(scene._scene_id) for scene in new_scenes])
             async_add_entities(new_scenes)
+        LOGGER.debug(
+            "Savant scene reconciliation inventory=%d added=%d removed=%d tracked=%d",
+            len(current_ids),
+            len(new_scenes),
+            len(removed_ids),
+            len(scenes),
+        )
 
     _reconcile()
     hub.add_scene_callback(_reconcile)

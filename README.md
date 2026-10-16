@@ -155,9 +155,38 @@ These are inherited from the sibling protocol document — see `PROTOCOL.md` §7
 New climate imports honor archive `isCelsius`, range, and mode-capability fields. Legacy
 fallback devices retain the original Fahrenheit defaults.
 
-## Search diagnostics
+## Debug logging
 
-Enable DEBUG logging for `custom_components.savant_ha` to trace one HA music search:
+Logging is controlled through Home Assistant's native integration UI; no YAML edit or
+Savant-specific toggle is needed. Open **Settings → Devices & Services → Savant** and
+use the integration menu's **Enable debug logging** or log-level control (wording varies
+by Home Assistant version). Select **Debug** if a level picker is shown.
+
+For missing scenes, enable logging **before reloading the Savant integration** so the
+capture includes authentication and the initial dashboard subscription. After reproducing,
+disable debug logging or restore the previous level. Download the captured log when Home
+Assistant offers it. Logging covers all Savant entries, not just one host.
+
+Scene diagnostics distinguish these stages without logging scene names, IDs, or payloads:
+
+- `Savant scene subscription sent`: the scene-list registration was sent.
+- `Savant dashboard update has no scene inventory`: a dashboard message arrived, but it
+  did not contain the expected scene-list state.
+- `Savant scene inventory ignored`: the scene-list value had an unexpected type.
+- `Savant scene inventory received`: total entries, accepted unique scenes, and rejected
+  or duplicate entries; zero entries means the host supplied an empty inventory.
+- `Savant scene inventory delivered`: inventory reached the hub, with callback count.
+- `Savant scene platform waiting`: the scene platform loaded before an inventory arrived.
+- `Savant scene reconciliation`: inventory size, additions requested, live removals,
+  and tracked scenes. Additions do not prove entities are enabled in Home Assistant.
+
+Review debug logs before sharing: other diagnostics can include search text, state keys,
+and network details. Do not share credentials or unredacted client-site information.
+
+### Search diagnostics
+
+The same control enables music-search diagnostics. For installations managed through
+YAML, the equivalent logger configuration is:
 
 ```yaml
 logger:

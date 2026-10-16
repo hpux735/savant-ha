@@ -263,10 +263,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         self._devices, self._coolmaster_climate_names()
                     )
                 elif any(is_coolmaster_climate(device) for device in self._devices):
-                    return self.async_show_menu(
-                        step_id="coolmaster",
-                        menu_options=["install_coolmaster", "continue_without_coolmaster"],
-                    )
+                    return await self.async_step_coolmaster()
                 if not self._devices:
                     errors["base"] = "no_devices"
                 else:
@@ -284,6 +281,15 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=_LOGIN_SCHEMA,
             errors=errors,
             description_placeholders={"host": self._host, "name": self._name or self._host},
+        )
+
+    async def async_step_coolmaster(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Offer direct CoolMasterNet setup before importing Savant climates."""
+        return self.async_show_menu(
+            step_id="coolmaster",
+            menu_options=["install_coolmaster", "continue_without_coolmaster"],
         )
 
     async def async_step_install_coolmaster(

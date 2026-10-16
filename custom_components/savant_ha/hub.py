@@ -273,6 +273,11 @@ class SavantHub:
     def _on_scenes_update(self, scenes: dict[str, dict[str, Any]]) -> None:
         """Replace the scene inventory from the dashboard's full-list push."""
         self.scenes = scenes
+        LOGGER.debug(
+            "Savant scene inventory delivered scenes=%d callbacks=%d",
+            len(scenes),
+            len(self._scene_callbacks),
+        )
         for callback_fn in list(self._scene_callbacks):
             callback_fn()
         self._schedule_flush()

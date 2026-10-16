@@ -823,3 +823,117 @@ The full tables and examples were checked automatically against the captures. Do
 1791043193692,2026-10-03T15:59:53.692Z,,,commit and push
 1791043782853,2026-10-03T16:09:42.853Z,,Try one-second search watchdog,"I was just using a different audio zone, but the same music service.  Let's try the 1 second watchdog"
 1791043932577,2026-10-03T16:12:12.577Z,,,commit and push
+1792164625214,2026-10-16T15:30:25.214Z,,Fix missing CoolMaster config-flow step,"it looks like it's breaking on adding coolmaster devices? 2026-10-16 08:19:16.323 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration hacs which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant
+2026-10-16 08:19:16.330 WARNING (SyncWorker_0) [homeassistant.loader] We found a custom integration savant_ha which has not been tested by Home Assistant. This component might cause stability problems, be sure to disable it if you experience issues with Home Assistant
+2026-10-16 08:19:37.649 WARNING (ImportExecutor_0) [py.warnings] /usr/local/lib/python3.14/site-packages/rich/segment.py:547: SyntaxWarning: 'return' in a 'finally' block
+  return
+2026-10-16 08:19:54.597 ERROR (Thread-5) [pychromecast.socket_client] [<PROJECT_NAME>(<OTHER_HOST_IP>):8009] Failed to connect to service MDNSServiceInfo(name='AVM-70-<DEVICE_UID>._googlecast._tcp.local.'), retrying in 5.0s
+2026-10-16 08:20:20.701 WARNING (MainThread) [homeassistant.bootstrap] Waiting for integrations to complete setup: {('lutron_caseta', '<CONFIGURATION_ID>'): 2394851.882019072}
+2026-10-16 08:24:39.489 ERROR (MainThread) [aiohttp.server] Unhandled exception
+Traceback (most recent call last):
+  File ""/usr/local/lib/python3.14/asyncio/base_events.py"", line 1302, in _sendfile_fallback
+    read = await self.run_in_executor(None, file.readinto, view)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_protocol.py"", line 686, in start
+    resp, reset = await task
+                  ^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_protocol.py"", line 602, in _handle_request
+    resp, reset = await self.finish_response(request, resp, start_time)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_protocol.py"", line 841, in finish_response
+    await prepare_meth(request)
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_fileresponse.py"", line 289, in prepare
+    return await self._prepare_open_file(request, fobj, st, file_encoding)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_fileresponse.py"", line 419, in _prepare_open_file
+    return await self._sendfile(request, fobj, offset, count)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_fileresponse.py"", line 148, in _sendfile
+    await loop.sendfile(transport, fobj, offset, count)
+  File ""/usr/local/lib/python3.14/asyncio/base_events.py"", line 1281, in sendfile
+    return await self._sendfile_fallback(transport, file,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                         offset, count)
+                                         ^^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/asyncio/base_events.py"", line 1311, in _sendfile_fallback
+    await proto.restore()
+  File ""/usr/local/lib/python3.14/asyncio/base_events.py"", line 263, in restore
+    self._transport.set_protocol(self._proto)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/asyncio/sslproto.py"", line 98, in set_protocol
+    self._ssl_protocol._set_app_protocol(protocol)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute '_set_app_protocol'
+2026-10-16 08:26:51.154 ERROR (MainThread) [aiohttp.server] Error handling request from <LOCAL_IP>
+Traceback (most recent call last):
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_protocol.py"", line 577, in _handle_request
+    resp = await request_handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_app.py"", line 563, in _handle
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/local/lib/python3.14/site-packages/aiohttp/web_middlewares.py"", line 117, in impl
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/security_filter.py"", line 98, in security_filter_middleware
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/forwarded.py"", line 80, in forwarded_middleware
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/request_context.py"", line 24, in request_context_middleware
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/ban.py"", line 88, in ban_middleware
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/auth.py"", line 251, in auth_middleware
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/headers.py"", line 39, in headers_middleware
+    response = await handler(request)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/helpers/http.py"", line 92, in handle
+    result = await handler(request, **request.match_info)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/decorators.py"", line 81, in with_admin
+    return await func(self, request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/config/config_entries.py"", line 252, in post
+    return await super().post(request, flow_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/components/http/data_validator.py"", line 72, in wrapper
+    return await method(view, request, data, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/helpers/data_entry_flow.py"", line 121, in post
+    result = await self._flow_mgr.async_configure(flow_id, data)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/data_entry_flow.py"", line 339, in async_configure
+    result = await self._async_configure(flow_id, user_input)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/config_entries.py"", line 1691, in _async_configure
+    return await super()._async_configure(flow_id, user_input)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/data_entry_flow.py"", line 387, in _async_configure
+    result = await self._async_handle_step(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        flow, cur_step[""step_id""], user_input
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File ""/usr/src/homeassistant/homeassistant/data_entry_flow.py"", line 555, in _async_handle_step
+    self._raise_if_step_does_not_exist(flow, result[""step_id""])
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ""/usr/src/homeassistant/homeassistant/data_entry_flow.py"", line 583, in _raise_if_step_does_not_exist
+    raise UnknownStep(
+        f""Handler {flow.__class__.__name__} doesn't support step {step_id}""
+    )
+homeassistant.data_entry_flow.UnknownStep: Handler SavantConfigFlow doesn't support step coolmaster
+    )
+homeassistant.data_entry_flow.UnknownStep: Handler SavantConfigFlow doesn't support step coolmaster"
+1792165108410,2026-10-16T15:38:28.410Z,,Diagnose missing client-site scenes,"there's a client site that isn't loading the scenes from the savant host.  How should we diagnose this? there's nothing obvious in the logs"
+1792165714160,2026-10-16T15:48:34.160Z,,Expose native debug logging and scene diagnostics,"you are the integration, so you don't you add the ability to turn on debug logging?"
+1792165879572,2026-10-16T15:51:19.572Z,,,Commit and push

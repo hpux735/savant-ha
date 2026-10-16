@@ -199,7 +199,8 @@ def test_send_failures_are_normalized_as_connection_errors():
     asyncio.run(run())
 
 
-def test_post_auth_matches_observed_state_startup_order():
+def test_post_auth_matches_observed_state_startup_order(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
     client = SavantClient("10.0.0.5", 12345, subscribe_keys=["a.b"])
     client._authorized = True
     sent: list[tuple[str, list]] = []
@@ -216,6 +217,7 @@ def test_post_auth_matches_observed_state_startup_order():
 
     asyncio.run(run())
 
+    assert "Savant scene subscription sent state=scenesAndFoldersReduced" in caplog.text
     assert sent == [
         ("session/fileDownload", [{"filePath": "uiconfig.tar.gz"}]),
         (
@@ -811,6 +813,57 @@ def test_scene_summaries_accepts_an_empty_authoritative_list():
         [{"state": SCENES_STATE_KEY, "value": []}]
     ) == {}
     assert scene_summaries_from_messages([{"state": "RecentServices", "value": []}]) is None
+
+
+@pytest.mark.parametrize("value", [None, "private-scene-payload", {"private-key": []}, 42])
+def test_scene_inventory_logs_malformed_value_type_without_payload(caplog, value):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    assert scene_summaries_from_messages(
+        [{"state": SCENES_STATE_KEY, "value": value}]
+    ) is None
+    assert f"expected list, value_type={type(value).__name__}" in caplog.text
+    assert "private-scene-payload" not in caplog.text
+    assert "private-key" not in caplog.text
+
+
+@pytest.mark.parametrize("value, counts", [
+    ([], "entries=0 accepted=0 rejected_or_duplicate=0"),
+    ([
+        {"id": "private-id", "name": "Private Scene"},
+        {"id": "private-id", "name": "Private Duplicate"},
+        {"id": 123, "name": "Private Invalid"},
+        None,
+    ], "entries=4 accepted=1 rejected_or_duplicate=3"),
+])
+def test_scene_inventory_logs_counts_without_scene_details(caplog, value, counts):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    scene_summaries_from_messages([{"state": SCENES_STATE_KEY, "value": value}])
+    assert f"Savant scene inventory received {counts}" in caplog.text
+    assert "private-id" not in caplog.text
+    assert "Private" not in caplog.text
+
+
+def test_dashboard_update_without_scene_inventory_is_logged(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    client = SavantClient("example.invalid", 12345)
+    seen = []
+    client.on_scenes_update = seen.append
+    client._handle_frame(_frame({
+        "URI": "dis/dashboard/update",
+        "messages": [{"state": "RecentServices", "value": []}],
+    }))
+    assert "Savant dashboard update has no scene inventory" in caplog.text
+    assert seen == []
+
+
+def test_scene_inventory_without_callback_is_logged(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    client = SavantClient("example.invalid", 12345)
+    client._handle_frame(_frame({
+        "URI": "dis/dashboard/update",
+        "messages": [{"state": SCENES_STATE_KEY, "value": []}],
+    }))
+    assert "Savant scene inventory not delivered: no inventory callback" in caplog.text
 
 
 def test_dashboard_scene_update_notifies_inventory_callback():
