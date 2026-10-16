@@ -71,3 +71,20 @@ def test_area_prefix_requires_a_whole_word_boundary():
     assert find_duplicate_lutron_lights(
         [_device(name="ette Ceiling")], [_light(name="Kitchenette Ceiling")]
     ) == {}
+
+
+@pytest.mark.parametrize("device, lights, reason", [
+    (_device(area=""), [_light()], "missing_area=1"),
+    (_device(name=""), [_light()], "missing_name=1"),
+    (_device(area="Bedroom"), [_light()], "no_matching_area=1"),
+    (_device(name="Accent"), [_light()], "no_matching_name=1"),
+    (_device(), [_light(), _light(entity_id="light.second")], "ambiguous=1"),
+    (_device(), [_light()], "suggested=1"),
+])
+def test_matching_summary_reports_reasons_without_identifiers(caplog, device, lights, reason):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    find_duplicate_lutron_lights([device], lights)
+    assert "Savant Lutron matching summary savant_lights=1" in caplog.text
+    assert reason in caplog.text
+    for private in ("Kitchen", "Bedroom", "Ceiling", "Accent", "light.kitchen_ceiling", "savant-1"):
+        assert private not in caplog.text

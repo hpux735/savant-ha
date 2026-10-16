@@ -71,6 +71,16 @@ These are name-and-area suggestions, not verified hardware matches: Savant addre
 have no established mapping to Caseta serial numbers. Renamed or differently assigned
 lights may need manual selection. Other Lutron integrations are not matched.
 
+Both the original and user-assigned entity/device names are considered, so renaming a
+Lutron entity does not discard its original name as matching evidence. The effective
+Home Assistant area still takes precedence; names never override an assigned area.
+
+With debug logging enabled, `Savant Lutron registry scan` reports configured entry,
+light, and eligible-light counts, plus exclusions for disabled records or missing areas
+and names. `Savant Lutron matching summary` then reports Savant lights lacking areas,
+lights with no matching Lutron area/name, ambiguous candidates, and suggestions. These
+summaries contain counts only, not light names, area names, or entity IDs.
+
 ## Entities (created only for the devices you import)
 
 | Platform | Device source | Entities |

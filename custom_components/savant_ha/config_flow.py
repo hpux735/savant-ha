@@ -14,6 +14,7 @@ Three steps, matching the standard device-import UX:
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 import aiohttp
@@ -467,32 +468,51 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         device_registry = dr.async_get(self.hass)
         area_registry = ar.async_get(self.hass)
         lights: list[dict[str, Any]] = []
+        counts: Counter[str] = Counter()
         for entry in entries:
             if entry.disabled_by is not None:
+                counts["disabled_entries"] += 1
                 continue
+            counts["enabled_entries"] += 1
             for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
                 if (
                     entity.platform != "lutron_caseta"
                     or not entity.entity_id.startswith("light.")
-                    or entity.disabled_by is not None
                 ):
+                    continue
+                counts["registry_lights"] += 1
+                if entity.disabled_by is not None:
+                    counts["disabled_entities"] += 1
                     continue
                 device = device_registry.async_get(entity.device_id) if entity.device_id else None
                 if device is not None and device.disabled_by is not None:
+                    counts["disabled_devices"] += 1
                     continue
                 area_id = entity.area_id or (device.area_id if device else None)
                 area = area_registry.async_get_area(area_id) if area_id else None
                 if area is None:
+                    counts["missing_area"] += 1
                     continue
-                name = entity.name or entity.original_name
-                if not name and device is not None:
-                    name = device.name_by_user or device.name
-                if name:
+                names = [entity.name, entity.original_name]
+                if device is not None:
+                    names.extend((device.name_by_user, device.name))
+                names = [name for name in names if isinstance(name, str) and name.strip()]
+                if names:
                     lights.append({
                         "entity_id": entity.entity_id,
-                        "names": [name],
+                        "names": names,
                         "area": area.name,
                     })
+                else:
+                    counts["missing_name"] += 1
+        LOGGER.debug(
+            "Savant Lutron registry scan entries=%d enabled_entries=%d disabled_entries=%d "
+            "registry_lights=%d eligible_lights=%d disabled_entities=%d disabled_devices=%d "
+            "missing_area=%d missing_name=%d",
+            len(entries), counts["enabled_entries"], counts["disabled_entries"],
+            counts["registry_lights"], len(lights), counts["disabled_entities"],
+            counts["disabled_devices"], counts["missing_area"], counts["missing_name"],
+        )
         matches = find_duplicate_lutron_lights(self._devices, lights)
         LOGGER.debug("Savant import suggested %d possible Lutron duplicate light(s)", len(matches))
         return matches

@@ -106,7 +106,7 @@ def test_registry_match_uses_caseta_light_name_and_device_area(flow):
 
 @pytest.mark.parametrize("field, value", [
     ("disabled_by", "user"), ("platform", "other"), ("entity_id", "cover.ceiling"),
-    ("area_id", "bedroom"), ("area_id", "unknown"), ("name", "Renamed Light"),
+    ("area_id", "bedroom"), ("area_id", "unknown"),
 ])
 def test_nonmatching_registry_entities_are_not_used(flow_module, flow, field, value):
     entity = flow_module.er.async_entries_for_config_entry.return_value[0]
@@ -140,6 +140,65 @@ def test_device_name_is_used_when_entity_has_no_name(flow_module, flow):
     assert flow._find_lutron_duplicates() == {"savant-1": "light.kitchen_ceiling"}
 
 
+def test_entity_rename_does_not_discard_original_name(flow_module, flow):
+    flow_module.er.async_entries_for_config_entry.return_value[0].name = "Renamed Light"
+    assert flow._find_lutron_duplicates() == {"savant-1": "light.kitchen_ceiling"}
+
+
+@pytest.mark.parametrize("field", ["name", "name_by_user"])
+def test_device_names_are_candidates_even_when_entity_has_a_name(flow_module, flow, field):
+    flow._devices[0]["name"] = "Accent"
+    device = flow_module.dr.async_get.return_value.async_get.return_value
+    setattr(device, field, "Kitchen Accent")
+    assert flow._find_lutron_duplicates() == {"savant-1": "light.kitchen_ceiling"}
+
+
+def test_registry_aliases_still_require_unique_matches(flow_module, flow):
+    entity = flow_module.er.async_entries_for_config_entry.return_value[0]
+    flow_module.er.async_entries_for_config_entry.return_value.append(SimpleNamespace(
+        **{**vars(entity), "entity_id": "light.second", "name": "Kitchen Ceiling"}
+    ))
+    assert flow._find_lutron_duplicates() == {}
+
+
+def test_lutron_scan_logs_missing_integration(flow, caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    flow.hass.config_entries.async_entries.return_value = []
+    flow.hass.config_entries.async_entries.side_effect = None
+    assert flow._find_lutron_duplicates() == {}
+    assert "registry scan entries=0 enabled_entries=0" in caplog.text
+    assert "registry_lights=0 eligible_lights=0" in caplog.text
+
+
+@pytest.mark.parametrize("reason", ["missing_area", "missing_name", "disabled_entities", "disabled_devices"])
+def test_lutron_scan_logs_exclusion_counts_without_names(flow_module, flow, caplog, reason):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    entity = flow_module.er.async_entries_for_config_entry.return_value[0]
+    device = flow_module.dr.async_get.return_value.async_get.return_value
+    if reason == "missing_area":
+        device.area_id = None
+    elif reason == "missing_name":
+        entity.name = entity.original_name = device.name_by_user = device.name = None
+    elif reason == "disabled_entities":
+        entity.disabled_by = "user"
+    else:
+        device.disabled_by = "user"
+    assert flow._find_lutron_duplicates() == {}
+    assert f"{reason}=1" in caplog.text
+    assert "registry_lights=1 eligible_lights=0" in caplog.text
+    assert "Kitchen" not in caplog.text
+    assert "light.kitchen_ceiling" not in caplog.text
+
+
+def test_registry_names_are_not_logged(flow_module, flow, caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    assert flow._find_lutron_duplicates() == {"savant-1": "light.kitchen_ceiling"}
+    assert "registry_lights=1 eligible_lights=1" in caplog.text
+    assert "Kitchen" not in caplog.text
+    assert "Ceiling" not in caplog.text
+    assert "light.kitchen_ceiling" not in caplog.text
+
+
 def test_new_import_suggests_unchecked_duplicate_and_allows_override(flow_module, flow, monkeypatch):
     devices = flow._devices + [{"type": "light", "id": "savant-2", "name": "Walls", "area": "Kitchen"}]
     monkeypatch.setattr(flow_module, "_devices_from_info", lambda probe: devices)
@@ -166,8 +225,13 @@ def test_reconfigure_keeps_existing_savant_duplicate_selected(flow_module, flow,
     devices = flow._devices + [{"type": "light", "id": "savant-2", "name": "Walls", "area": "Kitchen"}]
     entity = flow_module.er.async_entries_for_config_entry.return_value[0]
     flow_module.er.async_entries_for_config_entry.return_value.append(SimpleNamespace(
-        **{**vars(entity), "entity_id": "light.kitchen_walls", "original_name": "Kitchen Walls"}
+        **{**vars(entity), "entity_id": "light.kitchen_walls", "original_name": "Kitchen Walls", "device_id": "device-2"}
     ))
+    ceiling = flow_module.dr.async_get.return_value.async_get.return_value
+    walls = SimpleNamespace(**{**vars(ceiling), "name": "Kitchen Walls"})
+    flow_module.dr.async_get.return_value.async_get.side_effect = lambda id: {
+        "device-1": ceiling, "device-2": walls,
+    }.get(id)
     monkeypatch.setattr(flow_module, "_devices_from_info", lambda probe: devices)
     monkeypatch.setattr(flow_module, "probe_host", AsyncMock(return_value=SimpleNamespace(
         authorized=True, devices=[object()],
