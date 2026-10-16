@@ -312,10 +312,15 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Ask whether to omit matched Lutron lights and covers before the picker."""
+        count = len(self._lutron_duplicates)
         return self.async_show_menu(
             step_id="lutron",
-            menu_options=["exclude_lutron", "include_lutron"],
-            description_placeholders={"count": str(len(self._lutron_duplicates))},
+            # Literal labels remain visible if the frontend has stale/missing translations.
+            menu_options={
+                "exclude_lutron": f"Exclude {count} matched Lutron lights/shades: omit them from the Savant device list",
+                "include_lutron": f"Include {count} matched Lutron lights/shades: keep them in the Savant device list",
+            },
+            description_placeholders={"count": str(count)},
         )
 
     async def async_step_exclude_lutron(

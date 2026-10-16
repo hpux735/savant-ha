@@ -324,7 +324,9 @@ def test_new_import_prompts_before_picker_and_saves_the_choice(flow_module, flow
     result = asyncio.run(flow.async_step_login({"username": "test", "password": "test"}))
     assert result["type"] == "menu"
     assert result["step_id"] == "lutron"
-    assert result["menu_options"] == ["exclude_lutron", "include_lutron"]
+    assert list(result["menu_options"]) == ["exclude_lutron", "include_lutron"]
+    assert result["menu_options"]["exclude_lutron"] == "Exclude 1 matched Lutron lights/shades: omit them from the Savant device list"
+    assert result["menu_options"]["include_lutron"] == "Include 1 matched Lutron lights/shades: keep them in the Savant device list"
     assert result["description_placeholders"] == {"count": "1"}
     result = asyncio.run(flow.async_step_exclude_lutron() if exclude else flow.async_step_include_lutron())
     assert result["step_id"] == "devices"
@@ -403,6 +405,19 @@ def test_submission_cannot_bypass_lutron_choice(flow):
     result = asyncio.run(flow.async_step_devices({"devices": ["savant-1"]}))
     assert result["step_id"] == "lutron"
     assert result["type"] == "menu"
+
+
+def test_lutron_choices_have_literal_explanations_without_translations(flow):
+    # No translation provider is installed in this fixture, just as with a stale UI cache.
+    flow._lutron_duplicates = {"light-1": "light.first", "shade-1": "cover.first"}
+    result = asyncio.run(flow.async_step_lutron())
+    assert result["description_placeholders"] == {"count": "2"}
+    options = result["menu_options"]
+    assert isinstance(options, dict)
+    assert options["exclude_lutron"].startswith("Exclude 2 matched Lutron lights/shades:")
+    assert "omit them from the Savant device list" in options["exclude_lutron"]
+    assert options["include_lutron"].startswith("Include 2 matched Lutron lights/shades:")
+    assert "keep them in the Savant device list" in options["include_lutron"]
 
 
 def test_coolmaster_and_lutron_prompts_both_precede_the_picker(flow_module, flow, monkeypatch):

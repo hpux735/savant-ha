@@ -30,8 +30,9 @@ def test_config_flow_forms_and_menus_have_step_handlers():
                         f"{flow.name} has no handler for step {keyword.value.value}"
                     )
                 elif keyword.arg == "menu_options":
-                    assert isinstance(keyword.value, ast.List)
-                    for option in keyword.value.elts:
+                    assert isinstance(keyword.value, (ast.List, ast.Dict))
+                    options = keyword.value.elts if isinstance(keyword.value, ast.List) else keyword.value.keys
+                    for option in options:
                         assert isinstance(option, ast.Constant)
                         assert option.value in handlers, (
                             f"{flow.name} has no handler for menu option {option.value}"

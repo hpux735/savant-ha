@@ -68,6 +68,8 @@ devices?** choice before the device picker. **Exclude** omits matched lights and
 from both the picker and the saved Savant inventory, including previously imported
 matches. **Include** keeps them in the picker, selected by default. Unmatched Savant
 devices are unaffected. If no matches are found, the extra choice is skipped.
+The two choices include their own literal labels, matched-device counts, and explanations
+so they remain readable even if the frontend has not loaded the latest translations.
 
 Nothing is saved until you submit the final device picker, so canceling leaves the
 existing configuration unchanged. Reconfiguration asks again rather than permanently

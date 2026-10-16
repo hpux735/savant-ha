@@ -1244,3 +1244,5 @@ We're still not seeing scenes, unforch"
 1792180675528,2026-10-16T19:57:55.528Z,,,commit and push
 1792181230423,2026-10-16T20:07:10.423Z,,Ask whether to exclude matched Lutron devices before picker,"It seems like they're matching now, but I don't see how they're ""unchecked""  They're still in the list and being inclided.  I'd like to see a pop-up before it loads the device list that asks whether lutron devices should be excluded or not and omit them from the list"
 1792181573820,2026-10-16T20:12:53.820Z,,,commit and push
+1792182492540,2026-10-16T20:28:12.540Z,,Fix blank Lutron menu choices,"the picker just has two empty choices...  a top one and a bottom one.  Theere's not explanatory text at all.  Which one do I choose?  There's also no alt text"
+1792182671222,2026-10-16T20:31:11.222Z,,,commit and push
