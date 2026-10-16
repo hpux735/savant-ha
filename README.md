@@ -63,10 +63,17 @@ matches a cover. Whitespace differences and an area prefix in a
 light name are ignored; missing areas, ambiguous matches, disabled entities/devices, and
 disabled Lutron entries are not used. No bridge connection or device control is performed.
 
-Suggested duplicates stay visible in the picker, labeled with their Lutron entity ID,
-but start unchecked. Select them to import Savant controls too. Previously imported Savant
-lights and covers remain checked during reconfiguration, even if a possible Lutron duplicate is detected.
-This does not automatically delete or disable existing entities.
+When matches are found, setup and **Reconfigure** show an **Exclude matching Lutron
+devices?** choice before the device picker. **Exclude** omits matched lights and covers
+from both the picker and the saved Savant inventory, including previously imported
+matches. **Include** keeps them in the picker, selected by default. Unmatched Savant
+devices are unaffected. If no matches are found, the extra choice is skipped.
+
+Nothing is saved until you submit the final device picker, so canceling leaves the
+existing configuration unchanged. Reconfiguration asks again rather than permanently
+remembering the exclusion choice. Direct Lutron entities are never modified; existing
+HA entity registry records are not automatically deleted. An empty remaining inventory
+can be accepted without importing any devices.
 
 These are name-and-area suggestions, not verified hardware matches: Savant addresses
 have no established mapping to Caseta serial numbers. Renamed or differently assigned

@@ -280,12 +280,18 @@ def test_source_names_do_not_override_domain_or_assigned_area(flow_module, flow,
     )
 
 
-def test_cover_picker_is_unchecked_but_allows_override(cover_flow):
+def test_cover_exclusion_omits_matches_and_can_be_reversed(cover_flow):
     cover_flow._lutron_duplicates = cover_flow._find_lutron_duplicates()
     result = asyncio.run(cover_flow.async_step_devices())
-    assert result["data_schema"]({}) == {"devices": []}
+    assert result["step_id"] == "lutron"
+    result = asyncio.run(cover_flow.async_step_exclude_lutron())
+    assert result["step_id"] == "devices"
+    assert result["data_schema"]({}) == {}
+    assert result["description_placeholders"]["count"] == "0"
+    result = asyncio.run(cover_flow.async_step_include_lutron())
+    assert result["data_schema"]({}) == {"devices": ["savant-1"]}
     selector = next(iter(result["data_schema"].schema.values()))
-    assert "Possible Lutron duplicate: cover.kitchen_ceiling" in selector.config["options"][0]["label"]
+    assert len(selector.config["options"]) == 1
     result = asyncio.run(cover_flow.async_step_devices({"devices": ["savant-1"]}))
     assert result["data"]["devices"] == cover_flow._devices
 
@@ -301,28 +307,40 @@ def test_reconfigure_preserves_previously_imported_cover(flow_module, cover_flow
         authorized=True, devices=[object()],
     )))
     result = asyncio.run(cover_flow.async_step_reconfigure({"username": "test", "password": "test"}))
+    assert result["step_id"] == "lutron"
+    result = asyncio.run(cover_flow.async_step_include_lutron())
+    assert result["step_id"] == "reconfigure_devices"
     assert result["data_schema"]({}) == {"devices": ["savant-1"]}
     cover_flow.hass.config_entries.async_update_entry.assert_not_called()
 
 
-def test_new_import_suggests_unchecked_duplicate_and_allows_override(flow_module, flow, monkeypatch):
+@pytest.mark.parametrize("exclude", [True, False])
+def test_new_import_prompts_before_picker_and_saves_the_choice(flow_module, flow, monkeypatch, exclude):
     devices = flow._devices + [{"type": "light", "id": "savant-2", "name": "Walls", "area": "Kitchen"}]
     monkeypatch.setattr(flow_module, "_devices_from_info", lambda probe: devices)
     monkeypatch.setattr(flow_module, "probe_host", AsyncMock(return_value=SimpleNamespace(
         authorized=True, devices=[object()],
     )))
     result = asyncio.run(flow.async_step_login({"username": "test", "password": "test"}))
+    assert result["type"] == "menu"
+    assert result["step_id"] == "lutron"
+    assert result["menu_options"] == ["exclude_lutron", "include_lutron"]
+    assert result["description_placeholders"] == {"count": "1"}
+    result = asyncio.run(flow.async_step_exclude_lutron() if exclude else flow.async_step_include_lutron())
     assert result["step_id"] == "devices"
-    assert result["data_schema"]({}) == {"devices": ["savant-2"]}
+    expected = devices[1:] if exclude else devices
+    assert result["data_schema"]({}) == {"devices": [d["id"] for d in expected]}
     selector = next(iter(result["data_schema"].schema.values()))
-    assert len(selector.config["options"]) == 2
-    assert "Possible Lutron duplicate: light.kitchen_ceiling" in selector.config["options"][0]["label"]
+    assert [option["value"] for option in selector.config["options"]] == [d["id"] for d in expected]
+    assert result["description_placeholders"]["count"] == str(len(expected))
+    # A stale selection cannot reinsert a device removed by the exclusion choice.
     result = asyncio.run(flow.async_step_devices({"devices": ["savant-1", "savant-2"]}))
-    assert result["data"]["devices"] == devices
+    assert result["data"]["devices"] == expected
     assert "lutron_duplicates" not in result["data"]
 
 
-def test_reconfigure_keeps_existing_savant_duplicate_selected(flow_module, flow, monkeypatch):
+@pytest.mark.parametrize("exclude", [True, False])
+def test_reconfigure_choice_applies_to_previously_imported_duplicates(flow_module, flow, monkeypatch, exclude):
     entry = SimpleNamespace(data={"devices": list(flow._devices)})
     flow._get_reconfigure_entry = lambda: entry
     flow._discover_configured_entry = AsyncMock(return_value=SimpleNamespace(
@@ -343,18 +361,64 @@ def test_reconfigure_keeps_existing_savant_duplicate_selected(flow_module, flow,
         authorized=True, devices=[object()],
     )))
     result = asyncio.run(flow.async_step_reconfigure({"username": "test", "password": "test"}))
+    assert result["step_id"] == "lutron"
+    result = asyncio.run(flow.async_step_exclude_lutron() if exclude else flow.async_step_include_lutron())
     assert result["step_id"] == "reconfigure_devices"
-    assert result["data_schema"]({}) == {"devices": ["savant-1"]}
+    assert result["data_schema"]({}) == ({} if exclude else {"devices": ["savant-1", "savant-2"]})
     assert flow._lutron_duplicates == {
         "savant-1": "light.kitchen_ceiling", "savant-2": "light.kitchen_walls",
     }
     flow.hass.config_entries.async_update_entry.assert_not_called()
-    result = asyncio.run(flow.async_step_reconfigure_devices({"devices": ["savant-1"]}))
+    assert entry.data["devices"] == devices[:1]
+    result = asyncio.run(flow.async_step_reconfigure_devices({"devices": ["savant-1", "savant-2"]}))
     assert result["reason"] == "reconfigure_successful"
-    assert flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]["devices"] == entry.data["devices"]
+    assert flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]["devices"] == ([] if exclude else devices)
 
 
-def test_coolmaster_continue_retains_lutron_suggestions(flow):
+def test_coolmaster_continue_shows_lutron_choice_before_picker(flow):
     flow._lutron_duplicates = flow._find_lutron_duplicates()
     result = asyncio.run(flow.async_step_continue_without_coolmaster())
-    assert result["data_schema"]({}) == {"devices": []}
+    assert result["step_id"] == "lutron"
+    result = asyncio.run(flow.async_step_exclude_lutron())
+    assert result["step_id"] == "devices"
+    assert result["data_schema"]({}) == {}
+
+
+def test_no_matches_skips_lutron_prompt(flow):
+    result = asyncio.run(flow.async_step_devices())
+    assert result["step_id"] == "devices"
+    assert result["data_schema"]({}) == {"devices": ["savant-1"]}
+
+
+def test_excluding_all_matches_allows_an_empty_import(flow):
+    flow._lutron_duplicates = flow._find_lutron_duplicates()
+    asyncio.run(flow.async_step_exclude_lutron())
+    result = asyncio.run(flow.async_step_devices({}))
+    assert result["type"] == "create_entry"
+    assert result["data"]["devices"] == []
+
+
+def test_submission_cannot_bypass_lutron_choice(flow):
+    flow._lutron_duplicates = flow._find_lutron_duplicates()
+    result = asyncio.run(flow.async_step_devices({"devices": ["savant-1"]}))
+    assert result["step_id"] == "lutron"
+    assert result["type"] == "menu"
+
+
+def test_coolmaster_and_lutron_prompts_both_precede_the_picker(flow_module, flow, monkeypatch):
+    climate = {
+        "id": "climate-1", "type": "climate", "name": "Thermostat",
+        "state_name": "CoolMaster.HVAC.ThermostatCurrentTemperature_1_001",
+    }
+    devices = flow._devices + [climate]
+    monkeypatch.setattr(flow_module, "_devices_from_info", lambda probe: devices)
+    monkeypatch.setattr(flow_module, "probe_host", AsyncMock(return_value=SimpleNamespace(
+        authorized=True, devices=[object()],
+    )))
+    result = asyncio.run(flow.async_step_login({"username": "test", "password": "test"}))
+    assert result["step_id"] == "coolmaster"
+    result = asyncio.run(flow.async_step_continue_without_coolmaster())
+    assert result["step_id"] == "lutron"
+    result = asyncio.run(flow.async_step_exclude_lutron())
+    assert result["step_id"] == "devices"
+    assert result["data_schema"]({}) == {"devices": ["climate-1"]}

@@ -145,28 +145,19 @@ def _device_label(device: dict[str, Any]) -> str:
     return label
 
 
-def _devices_schema(
-    devices: list[dict[str, Any]],
-    lutron_duplicates: dict[str, str],
-    keep_selected: set[str],
-) -> vol.Schema:
-    # Potential direct-Lutron duplicates remain visible and can be selected explicitly.
+def _devices_schema(devices: list[dict[str, Any]]) -> vol.Schema:
+    if not devices:
+        return vol.Schema({})
     options = [
         {
             "value": device["id"],
-            "label": _device_label(device) + (
-                f" · Possible Lutron duplicate: {lutron_duplicates[device['id']]}"
-                if device["id"] in lutron_duplicates else ""
-            ),
+            "label": _device_label(device),
         }
         for device in devices
     ]
     return vol.Schema(
         {
-            vol.Required("devices", default=[
-                d["id"] for d in devices
-                if d["id"] not in lutron_duplicates or d["id"] in keep_selected
-            ]): selector.SelectSelector(
+            vol.Required("devices", default=[d["id"] for d in devices]): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=options, multiple=True)
             )
         }
@@ -193,7 +184,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._password: str = ""
         self._devices: list[dict[str, Any]] = []
         self._lutron_duplicates: dict[str, str] = {}
-        self._keep_selected: set[str] = set()
+        self._exclude_lutron: bool | None = None
         self._media_topology: list[dict[str, Any]] | None = None
         self._reconfigure_entry: ConfigEntry | None = None
 
@@ -268,6 +259,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._devices = _devices_from_info(probe)
                 self._lutron_duplicates = self._find_lutron_duplicates()
+                self._exclude_lutron = None
                 self._media_topology = (
                     [
                         dict(device)
@@ -286,14 +278,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if not self._devices:
                     errors["base"] = "no_devices"
                 else:
-                    return self.async_show_form(
-                        step_id="devices",
-                        data_schema=self._devices_schema(),
-                        description_placeholders={
-                            "count": str(len(self._devices)),
-                            "host": self._host,
-                        },
-                    )
+                    return await self.async_step_devices()
 
         return self.async_show_form(
             step_id="login",
@@ -321,20 +306,46 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Continue with the Savant device picker when direct access is unavailable."""
-        return self.async_show_form(
-            step_id="devices",
-            data_schema=self._devices_schema(),
-            description_placeholders={"count": str(len(self._devices)), "host": self._host},
+        return await self.async_step_devices()
+
+    async def async_step_lutron(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Ask whether to omit matched Lutron lights and covers before the picker."""
+        return self.async_show_menu(
+            step_id="lutron",
+            menu_options=["exclude_lutron", "include_lutron"],
+            description_placeholders={"count": str(len(self._lutron_duplicates))},
         )
+
+    async def async_step_exclude_lutron(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        self._exclude_lutron = True
+        return await self._async_device_picker()
+
+    async def async_step_include_lutron(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        self._exclude_lutron = False
+        return await self._async_device_picker()
+
+    async def _async_device_picker(self) -> FlowResult:
+        if self._reconfigure_entry is not None:
+            return await self.async_step_reconfigure_devices()
+        return await self.async_step_devices()
 
     async def async_step_devices(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        if self._lutron_duplicates and self._exclude_lutron is None:
+            return await self.async_step_lutron()
+        devices = self._devices_for_import()
         if user_input is not None:
             selected = set(user_input.get("devices", []))
             # area is the device's room, looked up from the config archive; it becomes
             # the HA area via the entity's suggested_area.
-            approved = [dict(d) for d in self._devices if d["id"] in selected]
+            approved = [dict(d) for d in devices if d["id"] in selected]
 
             data = {
                 CONF_HOST_UID: self._host_uid,
@@ -350,8 +361,8 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="devices",
-            data_schema=self._devices_schema(),
-            description_placeholders={"count": str(len(self._devices)), "host": self._host},
+            data_schema=_devices_schema(devices),
+            description_placeholders={"count": str(len(devices)), "host": self._host},
         )
 
     async def async_step_reconfigure(
@@ -391,10 +402,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._devices = _devices_from_info(probe)
                 self._lutron_duplicates = self._find_lutron_duplicates()
-                self._keep_selected = {
-                    device["id"]
-                    for device in self._reconfigure_entry.data.get(CONF_DEVICES, [])
-                }
+                self._exclude_lutron = None
                 self._media_topology = (
                     [
                         dict(device)
@@ -409,11 +417,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         self._devices, self._coolmaster_climate_names()
                     )
                 if self._devices:
-                    return self.async_show_form(
-                        step_id="reconfigure_devices",
-                        data_schema=self._devices_schema(),
-                        description_placeholders={"count": str(len(self._devices))},
-                    )
+                    return await self.async_step_reconfigure_devices()
                 errors["base"] = "no_devices"
 
         return self.async_show_form(
@@ -429,11 +433,14 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Persist a reconfigured, user-approved device inventory."""
+        if self._lutron_duplicates and self._exclude_lutron is None:
+            return await self.async_step_lutron()
+        devices = self._devices_for_import()
         if user_input is None:
             return self.async_show_form(
                 step_id="reconfigure_devices",
-                data_schema=self._devices_schema(),
-                description_placeholders={"count": str(len(self._devices))},
+                data_schema=_devices_schema(devices),
+                description_placeholders={"count": str(len(devices))},
             )
         if self._reconfigure_entry is None:
             return self.async_abort(reason="reconfigure_failed")
@@ -443,7 +450,7 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 CONF_USERNAME: self._username,
                 CONF_PASSWORD: self._password,
-                CONF_DEVICES: [dict(d) for d in self._devices if d["id"] in selected],
+                CONF_DEVICES: [dict(d) for d in devices if d["id"] in selected],
             }
         )
         if self._media_topology is not None:
@@ -458,8 +465,11 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             LOGGER.exception("Savant discovery failed for %s", host)
             return None
 
-    def _devices_schema(self) -> vol.Schema:
-        return _devices_schema(self._devices, self._lutron_duplicates, self._keep_selected)
+    def _devices_for_import(self) -> list[dict[str, Any]]:
+        return [
+            device for device in self._devices
+            if not self._exclude_lutron or device["id"] not in self._lutron_duplicates
+        ]
 
     def _find_lutron_duplicates(self) -> dict[str, str]:
         """Inspect enabled Caseta/RA2 Select lights/covers without controlling them."""

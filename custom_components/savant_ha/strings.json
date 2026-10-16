@@ -18,7 +18,7 @@
       },
       "devices": {
         "title": "Savant devices found",
-        "description": "{count} device(s) found on {host}. Choose which to import. Each device is placed in its configured room as an area — you can move them later in Home Assistant. Possible duplicates of existing Lutron Caséta/RA2 Select lights and shades are labeled and initially unchecked; select them if you also want Savant controls.",
+        "description": "{count} device(s) available to import on {host}. Choose which to import. Devices excluded by your Lutron choice are omitted. Each imported device is placed in its configured room as an area — you can move it later in Home Assistant.",
         "data": {
           "devices": "Devices to import"
         }
@@ -31,6 +31,14 @@
           "continue_without_coolmaster": "Continue with Savant only"
         }
       },
+      "lutron": {
+        "title": "Exclude matching Lutron devices?",
+        "description": "Found {count} Savant lights and shades that match existing Lutron Caséta/RA2 Select entities. Exclude these matches from the device picker and Savant import inventory, or include them if you want controls from both integrations. Your choice is saved only when you submit the final device picker. Direct Lutron entities are not changed.",
+        "menu_options": {
+          "exclude_lutron": "Exclude matching Lutron lights and shades",
+          "include_lutron": "Include them in the Savant device list"
+        }
+      },
       "reconfigure": {
         "title": "Refresh Savant devices",
         "description": "Log in to download the current device and media-source inventory from {host}.",
@@ -41,7 +49,7 @@
       },
       "reconfigure_devices": {
         "title": "Savant devices found",
-        "description": "{count} device(s) found. Choose the refreshed inventory to import, including each media source. Possible Lutron Caséta/RA2 Select light and shade duplicates are labeled and initially unchecked unless already imported. Existing Savant lights and shades remain selected; no existing entities are automatically deleted.",
+        "description": "{count} device(s) available to import. Choose the refreshed inventory, including each media source. Devices excluded by your Lutron choice are omitted, even if previously imported. Changes are saved when you submit. Existing entity registry records are not automatically deleted.",
         "data": {
           "devices": "Devices to import"
         }

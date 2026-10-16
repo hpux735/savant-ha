@@ -1,6 +1,7 @@
 """Repository-level quality and privacy checks."""
 
 import ast
+import json
 import re
 from pathlib import Path
 
@@ -35,6 +36,16 @@ def test_config_flow_forms_and_menus_have_step_handlers():
                         assert option.value in handlers, (
                             f"{flow.name} has no handler for menu option {option.value}"
                         )
+
+
+def test_lutron_choice_has_matching_english_ui_text():
+    integration = ROOT / "custom_components/savant_ha"
+    strings = json.loads((integration / "strings.json").read_text())
+    english = json.loads((integration / "translations/en.json").read_text())
+    assert strings == english
+    step = strings["config"]["step"]["lutron"]
+    assert set(step["menu_options"]) == {"exclude_lutron", "include_lutron"}
+    assert "{count}" in step["description"]
 
 
 def test_prompt_ledger_contains_no_private_ipv4_addresses():
