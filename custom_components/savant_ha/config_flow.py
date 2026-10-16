@@ -474,6 +474,28 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 counts["disabled_entries"] += 1
                 continue
             counts["enabled_entries"] += 1
+            source_names: dict[tuple[str, str], list[str]] = {}
+            runtime = getattr(entry, "runtime_data", None)
+            bridge = getattr(runtime, "bridge", None)
+            if bridge is not None:
+                # Mirror HA's lutron_caseta/entity.py unique_id and load-name rules.
+                # These are cached integration records, not a bridge/network request.
+                for domain in ("light", "cover"):
+                    for load in bridge.get_devices_by_domain(domain):
+                        name = load.get("name")
+                        if not isinstance(name, str):
+                            continue
+                        name = name.rsplit("_", 1)[-1]
+                        if not name.strip():
+                            continue
+                        serial = load.get("serial")
+                        if serial is not None:
+                            unique_id = str(serial)
+                        elif entry.unique_id and load.get("device_id") is not None:
+                            unique_id = f"{entry.unique_id}_{load['device_id']}"
+                        else:
+                            continue
+                        source_names.setdefault((domain, unique_id), []).append(name)
             for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
                 domain = entity.entity_id.partition(".")[0]
                 if (
@@ -494,11 +516,11 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 names = [entity.name, entity.original_name]
                 if device is not None:
                     names.extend((device.name_by_user, device.name))
+                load_names = source_names.get((domain, entity.unique_id), [])
+                names.extend(load_names)
+                if load_names:
+                    counts["source_names"] += 1
                 names = [name for name in names if isinstance(name, str) and name.strip()]
-                LOGGER.debug(
-                    "Savant Lutron registry candidate domain=%s names=%r area=%r",
-                    domain, names, area.name if area else None,
-                )
                 if area is None:
                     counts["missing_area"] += 1
                     continue
@@ -515,11 +537,12 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "Savant Lutron registry scan entries=%d enabled_entries=%d disabled_entries=%d "
             "registry_lights=%d eligible_lights=%d registry_covers=%d eligible_covers=%d "
             "disabled_entities=%d disabled_devices=%d "
-            "missing_area=%d missing_name=%d",
+            "missing_area=%d missing_name=%d source_names=%d",
             len(entries), counts["enabled_entries"], counts["disabled_entries"],
             counts["registry_lights"], counts["eligible_lights"],
             counts["registry_covers"], counts["eligible_covers"], counts["disabled_entities"],
             counts["disabled_devices"], counts["missing_area"], counts["missing_name"],
+            counts["source_names"],
         )
         matches = find_duplicate_lutron_devices(self._devices, entities)
         LOGGER.debug("Savant import suggested %d possible Lutron duplicate device(s)", len(matches))

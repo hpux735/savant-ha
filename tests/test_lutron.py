@@ -118,12 +118,14 @@ def test_ambiguous_covers_are_not_suggested():
     ) == {}
 
 
-def test_import_candidate_logs_names_and_areas_only_at_debug(caplog):
+def test_import_names_and_areas_are_not_logged_even_at_debug(caplog):
     device = {**_device(), "control": {"password": "secret-value"}, "addresses": "secret-address"}
     caplog.set_level("INFO", logger="custom_components.savant_ha")
     find_duplicate_lutron_devices([device], [_light()])
     assert "import candidate" not in caplog.text
     caplog.set_level("DEBUG", logger="custom_components.savant_ha")
     find_duplicate_lutron_devices([device], [_light()])
-    assert "import candidate domain=light name='Ceiling' area='Kitchen'" in caplog.text
+    assert "import candidate" not in caplog.text
+    assert "Ceiling" not in caplog.text
+    assert "Kitchen" not in caplog.text
     assert "secret-" not in caplog.text

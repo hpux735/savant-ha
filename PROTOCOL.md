@@ -441,6 +441,9 @@ CoolMaster setter shapes and fan auto/cycle remain uncaptured and disabled.
    name-and-area match within the same entity domain may represent the same device;
    this is overridable UI policy, not
    recovered protocol identity. No Caseta backend is inferred from a state-key shape.
+   HA's loaded Lutron integration can supply cached load names without its generated
+   display hierarchy. Those names are joined to Lutron registry entities using HA's own
+   Lutron unique-ID rules, not by equating Savant addresses with Lutron identities.
 9. Some reported local-login sessions receive ordinary state and `RecentServices`, but no
    `scenesAndFoldersReduced` inventory despite scenes being visible in the native app.
    The documented successful scene subscription is not tied to an exact full outer

@@ -78,7 +78,7 @@ def flow_module(monkeypatch):
 @pytest.fixture
 def flow(flow_module):
     flow = flow_module.SavantConfigFlow()
-    entry = SimpleNamespace(entry_id="lutron-entry", disabled_by=None)
+    entry = SimpleNamespace(entry_id="lutron-entry", disabled_by=None, unique_id="bridge-1", runtime_data=None)
     flow.hass = SimpleNamespace(config_entries=SimpleNamespace(
         async_entries=Mock(side_effect=lambda domain: [entry] if domain == "lutron_caseta" else []),
         async_update_entry=Mock(),
@@ -86,7 +86,7 @@ def flow(flow_module):
     entity = SimpleNamespace(
         entity_id="light.kitchen_ceiling", platform="lutron_caseta",
         device_id="device-1", area_id=None, disabled_by=None,
-        name=None, original_name="Kitchen Ceiling",
+        name=None, original_name="Kitchen Ceiling", unique_id="101",
     )
     device = SimpleNamespace(
         area_id="kitchen", disabled_by=None, name="Kitchen Ceiling", name_by_user=None,
@@ -191,14 +191,14 @@ def test_lutron_scan_logs_exclusion_counts_without_names(flow_module, flow, capl
     assert "light.kitchen_ceiling" not in caplog.text
 
 
-def test_registry_names_are_logged_only_at_debug(flow_module, flow, caplog):
-    caplog.set_level("INFO", logger="custom_components.savant_ha")
-    flow._find_lutron_duplicates()
-    assert "registry candidate" not in caplog.text
+def test_registry_names_are_not_logged_even_at_debug(flow_module, flow, caplog):
     caplog.set_level("DEBUG", logger="custom_components.savant_ha")
     assert flow._find_lutron_duplicates() == {"savant-1": "light.kitchen_ceiling"}
     assert "registry_lights=1 eligible_lights=1" in caplog.text
-    assert "registry candidate domain=light names=['Kitchen Ceiling', 'Kitchen Ceiling'] area='Kitchen'" in caplog.text
+    assert "registry candidate" not in caplog.text
+    assert "import candidate" not in caplog.text
+    assert "Kitchen" not in caplog.text
+    assert "Ceiling" not in caplog.text
     assert "light.kitchen_ceiling" not in caplog.text
 
 
@@ -213,7 +213,71 @@ def test_registry_collects_cover_candidates(flow_module, cover_flow, caplog):
     caplog.set_level("DEBUG", logger="custom_components.savant_ha")
     assert cover_flow._find_lutron_duplicates() == {"savant-1": "cover.kitchen_ceiling"}
     assert "registry_covers=1 eligible_covers=1" in caplog.text
-    assert "registry candidate domain=cover" in caplog.text
+    assert "registry candidate" not in caplog.text
+
+
+@pytest.mark.parametrize("domain", ["light", "cover"])
+def test_source_load_name_matches_despite_display_hierarchy(flow_module, flow, domain, caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    entity = flow_module.er.async_entries_for_config_entry.return_value[0]
+    entity.entity_id = f"{domain}.kitchen_ceiling"
+    entity.original_name = "Upper Floor Kitchen Kitchen Ceiling"
+    device = flow_module.dr.async_get.return_value.async_get.return_value
+    device.name = entity.original_name
+    flow._devices[0].update(type=domain, name="Kitchen Ceiling")
+    entry = flow.hass.config_entries.async_entries("lutron_caseta")[0]
+    bridge = Mock()
+    bridge.get_devices_by_domain.side_effect = lambda requested: [
+        {"serial": 101, "device_id": "42", "name": "Kitchen Ceiling"},
+    ] if requested == domain else []
+    entry.runtime_data = SimpleNamespace(bridge=bridge)
+    assert flow._find_lutron_duplicates() == {"savant-1": f"{domain}.kitchen_ceiling"}
+    assert "source_names=1" in caplog.text
+    assert "Kitchen" not in caplog.text
+    assert "Upper Floor" not in caplog.text
+
+
+@pytest.mark.parametrize("serial, unique_id, expected", [
+    (101, "101", True), (101, "102", False),
+    (None, "bridge-1_42", True), (None, "other-bridge_42", False),
+])
+def test_source_name_is_bound_to_exact_lutron_entity_identity(flow_module, flow, serial, unique_id, expected):
+    entity = flow_module.er.async_entries_for_config_entry.return_value[0]
+    entity.unique_id = unique_id
+    flow._devices[0]["name"] = "Accent"
+    entry = flow.hass.config_entries.async_entries("lutron_caseta")[0]
+    bridge = Mock()
+    bridge.get_devices_by_domain.side_effect = lambda domain: [
+        {"serial": serial, "device_id": "42", "name": "Kitchen Accent"},
+    ] if domain == "light" else []
+    entry.runtime_data = SimpleNamespace(bridge=bridge)
+    assert flow._find_lutron_duplicates() == (
+        {"savant-1": "light.kitchen_ceiling"} if expected else {}
+    )
+
+
+def test_hierarchy_is_not_guessed_from_arbitrary_registry_name(flow_module, flow):
+    entity = flow_module.er.async_entries_for_config_entry.return_value[0]
+    entity.original_name = "Upper Floor Kitchen Kitchen Ceiling"
+    flow_module.dr.async_get.return_value.async_get.return_value.name = entity.original_name
+    assert flow._find_lutron_duplicates() == {}
+
+
+@pytest.mark.parametrize("source_domain, entity_area, expected", [
+    ("light", "kitchen", True), ("cover", "kitchen", False), ("light", "bedroom", False),
+])
+def test_source_names_do_not_override_domain_or_assigned_area(flow_module, flow, source_domain, entity_area, expected):
+    flow._devices[0]["name"] = "Accent"
+    flow_module.er.async_entries_for_config_entry.return_value[0].area_id = entity_area
+    entry = flow.hass.config_entries.async_entries("lutron_caseta")[0]
+    bridge = Mock()
+    bridge.get_devices_by_domain.side_effect = lambda domain: [
+        {"serial": 101, "device_id": "42", "name": "Configured_Kitchen Accent"},
+    ] if domain == source_domain else []
+    entry.runtime_data = SimpleNamespace(bridge=bridge)
+    assert flow._find_lutron_duplicates() == (
+        {"savant-1": "light.kitchen_ceiling"} if expected else {}
+    )
 
 
 def test_cover_picker_is_unchecked_but_allows_override(cover_flow):

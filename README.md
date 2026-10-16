@@ -76,18 +76,23 @@ Both the original and user-assigned entity/device names are considered, so renam
 Lutron entity does not discard its original name as matching evidence. The effective
 Home Assistant area still takes precedence; names never override an assigned area.
 
+When Lutron is loaded, its cached load names are also matched. These omit the generated
+floor/room hierarchy that HA adds to display names. Each cached name is associated with
+its registry entity by Lutron's own serial-based unique ID (or its bridge-scoped ID when
+no serial exists), separately for lights and covers. This mirrors Home Assistant's
+open-source [`lutron_caseta` entity implementation](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/lutron_caseta/entity.py).
+No network query is made. If Lutron's runtime cache is unavailable, matching uses registry
+names only; arbitrary display-name suffixes or floor labels are never guessed.
+
 With debug logging enabled, `Savant Lutron registry scan` reports configured entry,
 light/cover, and eligible-light/cover counts, plus exclusions for disabled records or missing
-areas and names. `Savant Lutron matching summary` reports the matching results separately
+areas and names. `source_names` counts registry entities associated with cached load names.
+`Savant Lutron matching summary` reports the matching results separately
 for `domain=light` and `domain=cover`, including missing areas, unmatched areas/names,
 ambiguous candidates, and suggestions. These summaries contain counts only.
 
-For diagnosing naming mismatches, DEBUG logging also prints `Savant Lutron registry
-candidate` lines with the collected Lutron entity/device names and HA area, and `Savant
-Lutron import candidate` lines with each Savant name and area. These contain actual
-client-site names: review and redact them before sharing. They do not include credentials,
-raw device records, protocol addresses, or entity IDs. Turn off debug logging after the
-comparison; these per-device lines are not emitted at INFO level.
+The temporary per-device name/area debug printing has been removed. Only aggregate
+Lutron matching diagnostics are logged, even at DEBUG level.
 
 ## Entities (created only for the devices you import)
 

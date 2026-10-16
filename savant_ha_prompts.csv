@@ -1239,3 +1239,6 @@ We're still not seeing scenes, unforch"
 1792179123745,2026-10-16T19:32:03.745Z,,Extend Lutron deduplication to covers,"we should also de-dupe shades (covers)"
 1792179173352,2026-10-16T19:32:53.352Z,,Print duplicate candidate names and areas at debug,"I think it's best if you print them to debug for now"
 1792179752077,2026-10-16T19:42:32.077Z,,,commit and push
+1792180206531,2026-10-16T19:50:06.531Z,,Inspect Lutron candidate comparison log,"check lutron.log for the results"
+1792180370210,2026-10-16T19:52:50.210Z,,Match cached Lutron load names and remove noisy logs,"Ok, let's implement those changes and disable the log printing for now.  It's very noisy"
+1792180675528,2026-10-16T19:57:55.528Z,,,commit and push

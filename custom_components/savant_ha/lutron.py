@@ -26,10 +26,6 @@ def find_duplicate_lutron_devices(
         for device in devices:
             if device.get("type") != domain:
                 continue
-            LOGGER.debug(
-                "Savant Lutron import candidate domain=%s name=%r area=%r",
-                domain, device.get("name"), device.get("area"),
-            )
             counts["devices"] += 1
             area = " ".join(str(device.get("area") or "").split()).casefold()
             names = _names_in_area([str(device.get("name") or "")], area)
