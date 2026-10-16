@@ -26,17 +26,15 @@
       "coolmaster": {
         "title": "CoolMasterNet devices found",
         "description": "This Savant configuration includes CoolMasterNet climate devices. If Home Assistant can reach CoolMasterNet directly, install the built-in CoolMasterNet integration first; retrying Savant setup will exclude exact duplicate climate devices.",
-        "menu_options": {
-          "install_coolmaster": "Cancel and install CoolMasterNet first",
-          "continue_without_coolmaster": "Continue with Savant only"
+        "data": {
+          "coolmaster_action": "How should CoolMasterNet setup proceed?"
         }
       },
       "lutron": {
         "title": "Exclude matching Lutron devices?",
         "description": "Found {count} Savant lights and shades that match existing Lutron Caséta/RA2 Select entities. Exclude these matches from the device picker and Savant import inventory, or include them if you want controls from both integrations. Your choice is saved only when you submit the final device picker. Direct Lutron entities are not changed.",
-        "menu_options": {
-          "exclude_lutron": "Exclude matching Lutron lights and shades",
-          "include_lutron": "Include them in the Savant device list"
+        "data": {
+          "lutron_action": "How should matching Lutron devices be handled?"
         }
       },
       "reconfigure": {
@@ -61,7 +59,8 @@
       "no_auth_response": "The host did not respond to the login request. The host may only accept local login from the Savant app (see PROTOCOL.md §4.6).",
       "cannot_connect": "Could not connect to the host on the discovered port.",
       "connection_refused": "The Savant host advertised a control port but refused the connection. It may be restarting; wait a moment and try again.",
-      "no_devices": "Connected and authenticated, but no rooms or devices were reported by the host."
+      "no_devices": "Connected and authenticated, but no rooms or devices were reported by the host.",
+      "invalid_choice": "Select one of the available choices."
     },
     "abort": {
       "already_configured": "This host is already configured.",

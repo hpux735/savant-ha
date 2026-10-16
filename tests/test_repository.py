@@ -45,7 +45,8 @@ def test_lutron_choice_has_matching_english_ui_text():
     english = json.loads((integration / "translations/en.json").read_text())
     assert strings == english
     step = strings["config"]["step"]["lutron"]
-    assert set(step["menu_options"]) == {"exclude_lutron", "include_lutron"}
+    assert set(step["data"]) == {"lutron_action"}
+    assert set(strings["config"]["step"]["coolmaster"]["data"]) == {"coolmaster_action"}
     assert "{count}" in step["description"]
 
 

@@ -1246,3 +1246,5 @@ We're still not seeing scenes, unforch"
 1792181573820,2026-10-16T20:12:53.820Z,,,commit and push
 1792182492540,2026-10-16T20:28:12.540Z,,Fix blank Lutron menu choices,"the picker just has two empty choices...  a top one and a bottom one.  Theere's not explanatory text at all.  Which one do I choose?  There's also no alt text"
 1792182671222,2026-10-16T20:31:11.222Z,,,commit and push
+1792183527826,2026-10-16T20:45:27.826Z,,Replace blank coexistence menus with labeled forms,"they're still blank"
+1792185412542,2026-10-16T21:16:52.542Z,,,commit and push

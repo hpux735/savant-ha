@@ -68,8 +68,16 @@ devices?** choice before the device picker. **Exclude** omits matched lights and
 from both the picker and the saved Savant inventory, including previously imported
 matches. **Include** keeps them in the picker, selected by default. Unmatched Savant
 devices are unaffected. If no matches are found, the extra choice is skipped.
-The two choices include their own literal labels, matched-device counts, and explanations
-so they remain readable even if the frontend has not loaded the latest translations.
+The choice is a form with explicit radio-option labels and a Submit button, not a
+two-row navigation menu. Labels include the matched-device count and action. The
+CoolMasterNet prompt uses the same form-based approach with its own explicit options.
+Select an option and submit it; there is no default choice. The explanatory paragraphs
+still depend on translations, but the option text does not.
+
+If diagnosing a blank prompt, DEBUG lines `Savant setup choice form step=lutron` and
+`Savant setup choice form step=coolmaster` identify the screen actually being shown.
+After updating, restart HA, close any old setup dialogs, and start a fresh Reconfigure
+flow. Two blank navigation rows are not the new form UI.
 
 Nothing is saved until you submit the final device picker, so canceling leaves the
 existing configuration unchanged. Reconfiguration asks again rather than permanently

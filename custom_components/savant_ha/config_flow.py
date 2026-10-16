@@ -291,49 +291,59 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Offer direct CoolMasterNet setup before importing Savant climates."""
-        return self.async_show_menu(
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input.get("coolmaster_action") == "install":
+                return self.async_abort(reason="coolmaster_setup_recommended")
+            if user_input.get("coolmaster_action") == "continue":
+                return await self.async_step_devices()
+            errors["base"] = "invalid_choice"
+        LOGGER.debug("Savant setup choice form step=coolmaster")
+        return self.async_show_form(
             step_id="coolmaster",
-            menu_options=["install_coolmaster", "continue_without_coolmaster"],
+            data_schema=vol.Schema({
+                vol.Required("coolmaster_action"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        mode=selector.SelectSelectorMode.LIST,
+                        options=[
+                            {"value": "install", "label": "Cancel Savant setup so I can install CoolMasterNet first"},
+                            {"value": "continue", "label": "Continue Savant setup without direct CoolMasterNet"},
+                        ],
+                    )
+                ),
+            }),
+            errors=errors,
         )
-
-    async def async_step_install_coolmaster(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Stop setup so the installer can configure direct CoolMasterNet access."""
-        return self.async_abort(reason="coolmaster_setup_recommended")
-
-    async def async_step_continue_without_coolmaster(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Continue with the Savant device picker when direct access is unavailable."""
-        return await self.async_step_devices()
 
     async def async_step_lutron(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Ask whether to omit matched Lutron lights and covers before the picker."""
         count = len(self._lutron_duplicates)
-        return self.async_show_menu(
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            action = user_input.get("lutron_action")
+            if action in ("exclude", "include"):
+                self._exclude_lutron = action == "exclude"
+                return await self._async_device_picker()
+            errors["base"] = "invalid_choice"
+        LOGGER.debug("Savant setup choice form step=lutron matches=%d", count)
+        return self.async_show_form(
             step_id="lutron",
-            # Literal labels remain visible if the frontend has stale/missing translations.
-            menu_options={
-                "exclude_lutron": f"Exclude {count} matched Lutron lights/shades: omit them from the Savant device list",
-                "include_lutron": f"Include {count} matched Lutron lights/shades: keep them in the Savant device list",
-            },
+            data_schema=vol.Schema({
+                vol.Required("lutron_action"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        mode=selector.SelectSelectorMode.LIST,
+                        options=[
+                            {"value": "exclude", "label": f"Exclude {count} matched Lutron lights/shades from the Savant device list"},
+                            {"value": "include", "label": f"Include {count} matched Lutron lights/shades in the Savant device list"},
+                        ],
+                    )
+                ),
+            }),
             description_placeholders={"count": str(count)},
+            errors=errors,
         )
-
-    async def async_step_exclude_lutron(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        self._exclude_lutron = True
-        return await self._async_device_picker()
-
-    async def async_step_include_lutron(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        self._exclude_lutron = False
-        return await self._async_device_picker()
 
     async def _async_device_picker(self) -> FlowResult:
         if self._reconfigure_entry is not None:

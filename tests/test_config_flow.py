@@ -8,6 +8,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import voluptuous as vol
 
 
 @pytest.fixture
@@ -63,6 +64,7 @@ def flow_module(monkeypatch):
     selector.TextSelector = selector.SelectSelector = Selector
     selector.TextSelectorConfig = selector.SelectSelectorConfig = lambda **kwargs: kwargs
     selector.TextSelectorType = SimpleNamespace(PASSWORD="password")
+    selector.SelectSelectorMode = SimpleNamespace(LIST="list")
     for name in ("area", "device", "entity"):
         modules[f"homeassistant.helpers.{name}_registry"].async_get = Mock()
 
@@ -284,11 +286,11 @@ def test_cover_exclusion_omits_matches_and_can_be_reversed(cover_flow):
     cover_flow._lutron_duplicates = cover_flow._find_lutron_duplicates()
     result = asyncio.run(cover_flow.async_step_devices())
     assert result["step_id"] == "lutron"
-    result = asyncio.run(cover_flow.async_step_exclude_lutron())
+    result = asyncio.run(cover_flow.async_step_lutron({"lutron_action": "exclude"}))
     assert result["step_id"] == "devices"
     assert result["data_schema"]({}) == {}
     assert result["description_placeholders"]["count"] == "0"
-    result = asyncio.run(cover_flow.async_step_include_lutron())
+    result = asyncio.run(cover_flow.async_step_lutron({"lutron_action": "include"}))
     assert result["data_schema"]({}) == {"devices": ["savant-1"]}
     selector = next(iter(result["data_schema"].schema.values()))
     assert len(selector.config["options"]) == 1
@@ -308,7 +310,7 @@ def test_reconfigure_preserves_previously_imported_cover(flow_module, cover_flow
     )))
     result = asyncio.run(cover_flow.async_step_reconfigure({"username": "test", "password": "test"}))
     assert result["step_id"] == "lutron"
-    result = asyncio.run(cover_flow.async_step_include_lutron())
+    result = asyncio.run(cover_flow.async_step_lutron({"lutron_action": "include"}))
     assert result["step_id"] == "reconfigure_devices"
     assert result["data_schema"]({}) == {"devices": ["savant-1"]}
     cover_flow.hass.config_entries.async_update_entry.assert_not_called()
@@ -322,13 +324,14 @@ def test_new_import_prompts_before_picker_and_saves_the_choice(flow_module, flow
         authorized=True, devices=[object()],
     )))
     result = asyncio.run(flow.async_step_login({"username": "test", "password": "test"}))
-    assert result["type"] == "menu"
+    assert result["type"] == "form"
     assert result["step_id"] == "lutron"
-    assert list(result["menu_options"]) == ["exclude_lutron", "include_lutron"]
-    assert result["menu_options"]["exclude_lutron"] == "Exclude 1 matched Lutron lights/shades: omit them from the Savant device list"
-    assert result["menu_options"]["include_lutron"] == "Include 1 matched Lutron lights/shades: keep them in the Savant device list"
+    choice = next(iter(result["data_schema"].schema.values()))
+    assert choice.config["mode"] == "list"
+    assert choice.config["options"][0]["label"] == "Exclude 1 matched Lutron lights/shades from the Savant device list"
+    assert choice.config["options"][1]["label"] == "Include 1 matched Lutron lights/shades in the Savant device list"
     assert result["description_placeholders"] == {"count": "1"}
-    result = asyncio.run(flow.async_step_exclude_lutron() if exclude else flow.async_step_include_lutron())
+    result = asyncio.run(flow.async_step_lutron({"lutron_action": "exclude" if exclude else "include"}))
     assert result["step_id"] == "devices"
     expected = devices[1:] if exclude else devices
     assert result["data_schema"]({}) == {"devices": [d["id"] for d in expected]}
@@ -364,7 +367,7 @@ def test_reconfigure_choice_applies_to_previously_imported_duplicates(flow_modul
     )))
     result = asyncio.run(flow.async_step_reconfigure({"username": "test", "password": "test"}))
     assert result["step_id"] == "lutron"
-    result = asyncio.run(flow.async_step_exclude_lutron() if exclude else flow.async_step_include_lutron())
+    result = asyncio.run(flow.async_step_lutron({"lutron_action": "exclude" if exclude else "include"}))
     assert result["step_id"] == "reconfigure_devices"
     assert result["data_schema"]({}) == ({} if exclude else {"devices": ["savant-1", "savant-2"]})
     assert flow._lutron_duplicates == {
@@ -379,9 +382,9 @@ def test_reconfigure_choice_applies_to_previously_imported_duplicates(flow_modul
 
 def test_coolmaster_continue_shows_lutron_choice_before_picker(flow):
     flow._lutron_duplicates = flow._find_lutron_duplicates()
-    result = asyncio.run(flow.async_step_continue_without_coolmaster())
+    result = asyncio.run(flow.async_step_coolmaster({"coolmaster_action": "continue"}))
     assert result["step_id"] == "lutron"
-    result = asyncio.run(flow.async_step_exclude_lutron())
+    result = asyncio.run(flow.async_step_lutron({"lutron_action": "exclude"}))
     assert result["step_id"] == "devices"
     assert result["data_schema"]({}) == {}
 
@@ -394,7 +397,7 @@ def test_no_matches_skips_lutron_prompt(flow):
 
 def test_excluding_all_matches_allows_an_empty_import(flow):
     flow._lutron_duplicates = flow._find_lutron_duplicates()
-    asyncio.run(flow.async_step_exclude_lutron())
+    asyncio.run(flow.async_step_lutron({"lutron_action": "exclude"}))
     result = asyncio.run(flow.async_step_devices({}))
     assert result["type"] == "create_entry"
     assert result["data"]["devices"] == []
@@ -404,7 +407,7 @@ def test_submission_cannot_bypass_lutron_choice(flow):
     flow._lutron_duplicates = flow._find_lutron_duplicates()
     result = asyncio.run(flow.async_step_devices({"devices": ["savant-1"]}))
     assert result["step_id"] == "lutron"
-    assert result["type"] == "menu"
+    assert result["type"] == "form"
 
 
 def test_lutron_choices_have_literal_explanations_without_translations(flow):
@@ -412,12 +415,46 @@ def test_lutron_choices_have_literal_explanations_without_translations(flow):
     flow._lutron_duplicates = {"light-1": "light.first", "shade-1": "cover.first"}
     result = asyncio.run(flow.async_step_lutron())
     assert result["description_placeholders"] == {"count": "2"}
-    options = result["menu_options"]
-    assert isinstance(options, dict)
-    assert options["exclude_lutron"].startswith("Exclude 2 matched Lutron lights/shades:")
-    assert "omit them from the Savant device list" in options["exclude_lutron"]
-    assert options["include_lutron"].startswith("Include 2 matched Lutron lights/shades:")
-    assert "keep them in the Savant device list" in options["include_lutron"]
+    assert result["type"] == "form"
+    choice = next(iter(result["data_schema"].schema.values()))
+    assert choice.config["mode"] == "list"
+    assert "translation_key" not in choice.config
+    assert choice.config["options"] == [
+        {"value": "exclude", "label": "Exclude 2 matched Lutron lights/shades from the Savant device list"},
+        {"value": "include", "label": "Include 2 matched Lutron lights/shades in the Savant device list"},
+    ]
+
+
+@pytest.mark.parametrize("step, field", [("lutron", "lutron_action"), ("coolmaster", "coolmaster_action")])
+def test_coexistence_prompt_is_a_self_labeled_form_requiring_a_choice(flow, caplog, step, field):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    result = asyncio.run(getattr(flow, f"async_step_{step}")())
+    assert result["type"] == "form"
+    assert "menu_options" not in result
+    key, choice = next(iter(result["data_schema"].schema.items()))
+    assert key.schema == field
+    assert choice.config["mode"] == "list"
+    assert "translation_key" not in choice.config
+    assert all(option["label"].strip() for option in choice.config["options"])
+    with pytest.raises(vol.Invalid):
+        result["data_schema"]({})
+    assert f"Savant setup choice form step={step}" in caplog.text
+
+
+@pytest.mark.parametrize("step, field", [("lutron", "lutron_action"), ("coolmaster", "coolmaster_action")])
+def test_invalid_coexistence_choice_does_not_advance_or_save(flow, step, field):
+    result = asyncio.run(getattr(flow, f"async_step_{step}")({field: "invalid"}))
+    assert result["step_id"] == step
+    assert result["errors"] == {"base": "invalid_choice"}
+    assert flow._exclude_lutron is None
+    flow.hass.config_entries.async_update_entry.assert_not_called()
+
+
+def test_coolmaster_install_choice_cancels_setup_without_saving(flow):
+    result = asyncio.run(flow.async_step_coolmaster({"coolmaster_action": "install"}))
+    assert result["type"] == "abort"
+    assert result["reason"] == "coolmaster_setup_recommended"
+    flow.hass.config_entries.async_update_entry.assert_not_called()
 
 
 def test_coolmaster_and_lutron_prompts_both_precede_the_picker(flow_module, flow, monkeypatch):
@@ -432,8 +469,8 @@ def test_coolmaster_and_lutron_prompts_both_precede_the_picker(flow_module, flow
     )))
     result = asyncio.run(flow.async_step_login({"username": "test", "password": "test"}))
     assert result["step_id"] == "coolmaster"
-    result = asyncio.run(flow.async_step_continue_without_coolmaster())
+    result = asyncio.run(flow.async_step_coolmaster({"coolmaster_action": "continue"}))
     assert result["step_id"] == "lutron"
-    result = asyncio.run(flow.async_step_exclude_lutron())
+    result = asyncio.run(flow.async_step_lutron({"lutron_action": "exclude"}))
     assert result["step_id"] == "devices"
     assert result["data_schema"]({}) == {"devices": ["climate-1"]}
