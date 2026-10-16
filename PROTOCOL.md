@@ -344,6 +344,8 @@ the multi-state batching observed for `state/register` does not establish dashbo
 support (sibling `PROTOCOL.md` §6.7/§9.1, revision `7594101`). A reported host returned only
 `RecentServices` updates after a combined dashboard registration; first-entry-only host
 processing is a hypothesis, not capture-proven behavior.
+Follow-up logs still contained only `RecentServices` after separate single-state requests,
+so splitting the requests is not sufficient to resolve that reported scene-discovery failure.
 The initial `dis/dashboard/update` is the complete current scene-summary list; summaries
 include stable `id` and `name`, so integrations can reconcile scene entities as host scenes
 are created or removed. Creation was observed to push a replacement list. A deletion push
@@ -434,7 +436,14 @@ CoolMaster setter shapes and fan auto/cycle remain uncaptured and disabled.
    does not yet re-derive them from the state-key namespace.
 7. HVAC archive metadata supplies per-entity scale/range/capability flags on new imports;
    old persisted device records may require reconfiguration to acquire those fields.
-8. No mapping from Savant light addresses to Caseta/RA2 Select device serial numbers has
+8. No mapping from Savant light/cover addresses to Caseta/RA2 Select device serial numbers has
    been established. Import-time duplicate suggestions assume that an unambiguous exact
-   name-and-area match may represent the same light; this is overridable UI policy, not
+   name-and-area match within the same entity domain may represent the same device;
+   this is overridable UI policy, not
    recovered protocol identity. No Caseta backend is inferred from a state-key shape.
+9. Some reported local-login sessions receive ordinary state and `RecentServices`, but no
+   `scenesAndFoldersReduced` inventory despite scenes being visible in the native app.
+   The documented successful scene subscription is not tied to an exact full outer
+   envelope or a same-account comparison with these sessions. Account/permission scope,
+   scene type, host-version differences, and preceding native requests remain unverified;
+   compare a fresh native session on the affected host before adding alternate requests.

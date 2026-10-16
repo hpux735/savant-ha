@@ -18,7 +18,7 @@
       },
       "devices": {
         "title": "Savant devices found",
-        "description": "{count} device(s) found on {host}. Choose which to import. Each device is placed in its configured room as an area — you can move them later in Home Assistant. Possible duplicates of existing Lutron Caséta/RA2 Select lights are labeled and initially unchecked; select them if you also want Savant controls.",
+        "description": "{count} device(s) found on {host}. Choose which to import. Each device is placed in its configured room as an area — you can move them later in Home Assistant. Possible duplicates of existing Lutron Caséta/RA2 Select lights and shades are labeled and initially unchecked; select them if you also want Savant controls.",
         "data": {
           "devices": "Devices to import"
         }
@@ -41,7 +41,7 @@
       },
       "reconfigure_devices": {
         "title": "Savant devices found",
-        "description": "{count} device(s) found. Choose the refreshed inventory to import, including each media source. Possible Lutron Caséta/RA2 Select duplicates are labeled and initially unchecked unless already imported. Existing Savant lights remain selected; no existing entities are automatically deleted.",
+        "description": "{count} device(s) found. Choose the refreshed inventory to import, including each media source. Possible Lutron Caséta/RA2 Select light and shade duplicates are labeled and initially unchecked unless already imported. Existing Savant lights and shades remain selected; no existing entities are automatically deleted.",
         "data": {
           "devices": "Devices to import"
         }

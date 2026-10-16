@@ -54,17 +54,18 @@ Settings → Devices & Services → **Add Integration** → **Savant**.
 Optional advanced settings (a cached `hostToken`, `cloudToken`/`configurationID`, or
 extra room names) live behind the integration's **Configure** button.
 
-### Existing Lutron lights
+### Existing Lutron lights and shades
 
-When the built-in `lutron_caseta` integration (Caseta/RA2 Select) already provides lights,
+When the built-in `lutron_caseta` integration (Caseta/RA2 Select) already provides lights or covers,
 Savant setup and device refresh suggest duplicates using exact, case-insensitive names
-and matching Home Assistant area names. Whitespace differences and an area prefix in a
+and matching Home Assistant area names within the same entity domain. A light never
+matches a cover. Whitespace differences and an area prefix in a
 light name are ignored; missing areas, ambiguous matches, disabled entities/devices, and
 disabled Lutron entries are not used. No bridge connection or device control is performed.
 
 Suggested duplicates stay visible in the picker, labeled with their Lutron entity ID,
 but start unchecked. Select them to import Savant controls too. Previously imported Savant
-lights remain checked during refresh, even if a possible Lutron duplicate is detected.
+lights and covers remain checked during reconfiguration, even if a possible Lutron duplicate is detected.
 This does not automatically delete or disable existing entities.
 
 These are name-and-area suggestions, not verified hardware matches: Savant addresses
@@ -76,10 +77,17 @@ Lutron entity does not discard its original name as matching evidence. The effec
 Home Assistant area still takes precedence; names never override an assigned area.
 
 With debug logging enabled, `Savant Lutron registry scan` reports configured entry,
-light, and eligible-light counts, plus exclusions for disabled records or missing areas
-and names. `Savant Lutron matching summary` then reports Savant lights lacking areas,
-lights with no matching Lutron area/name, ambiguous candidates, and suggestions. These
-summaries contain counts only, not light names, area names, or entity IDs.
+light/cover, and eligible-light/cover counts, plus exclusions for disabled records or missing
+areas and names. `Savant Lutron matching summary` reports the matching results separately
+for `domain=light` and `domain=cover`, including missing areas, unmatched areas/names,
+ambiguous candidates, and suggestions. These summaries contain counts only.
+
+For diagnosing naming mismatches, DEBUG logging also prints `Savant Lutron registry
+candidate` lines with the collected Lutron entity/device names and HA area, and `Savant
+Lutron import candidate` lines with each Savant name and area. These contain actual
+client-site names: review and redact them before sharing. They do not include credentials,
+raw device records, protocol addresses, or entity IDs. Turn off debug logging after the
+comparison; these per-device lines are not emitted at INFO level.
 
 ## Entities (created only for the devices you import)
 

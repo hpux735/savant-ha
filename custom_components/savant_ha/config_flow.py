@@ -46,7 +46,7 @@ from .const import (
     LOGGER,
 )
 from .coolmaster import exclude_duplicate_coolmaster_devices, is_coolmaster_climate
-from .lutron import find_duplicate_lutron_lights
+from .lutron import find_duplicate_lutron_devices
 from .savant_client import (
     SavantDeviceInfo,
     SavantHostInfo,
@@ -462,12 +462,12 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return _devices_schema(self._devices, self._lutron_duplicates, self._keep_selected)
 
     def _find_lutron_duplicates(self) -> dict[str, str]:
-        """Inspect enabled Caseta/RA2 Select lights without querying or controlling them."""
+        """Inspect enabled Caseta/RA2 Select lights/covers without controlling them."""
         entries = self.hass.config_entries.async_entries("lutron_caseta")
         entity_registry = er.async_get(self.hass)
         device_registry = dr.async_get(self.hass)
         area_registry = ar.async_get(self.hass)
-        lights: list[dict[str, Any]] = []
+        entities: list[dict[str, Any]] = []
         counts: Counter[str] = Counter()
         for entry in entries:
             if entry.disabled_by is not None:
@@ -475,12 +475,13 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 continue
             counts["enabled_entries"] += 1
             for entity in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+                domain = entity.entity_id.partition(".")[0]
                 if (
                     entity.platform != "lutron_caseta"
-                    or not entity.entity_id.startswith("light.")
+                    or domain not in {"light", "cover"}
                 ):
                     continue
-                counts["registry_lights"] += 1
+                counts[f"registry_{domain}s"] += 1
                 if entity.disabled_by is not None:
                     counts["disabled_entities"] += 1
                     continue
@@ -490,15 +491,20 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     continue
                 area_id = entity.area_id or (device.area_id if device else None)
                 area = area_registry.async_get_area(area_id) if area_id else None
-                if area is None:
-                    counts["missing_area"] += 1
-                    continue
                 names = [entity.name, entity.original_name]
                 if device is not None:
                     names.extend((device.name_by_user, device.name))
                 names = [name for name in names if isinstance(name, str) and name.strip()]
+                LOGGER.debug(
+                    "Savant Lutron registry candidate domain=%s names=%r area=%r",
+                    domain, names, area.name if area else None,
+                )
+                if area is None:
+                    counts["missing_area"] += 1
+                    continue
                 if names:
-                    lights.append({
+                    counts[f"eligible_{domain}s"] += 1
+                    entities.append({
                         "entity_id": entity.entity_id,
                         "names": names,
                         "area": area.name,
@@ -507,14 +513,16 @@ class SavantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     counts["missing_name"] += 1
         LOGGER.debug(
             "Savant Lutron registry scan entries=%d enabled_entries=%d disabled_entries=%d "
-            "registry_lights=%d eligible_lights=%d disabled_entities=%d disabled_devices=%d "
+            "registry_lights=%d eligible_lights=%d registry_covers=%d eligible_covers=%d "
+            "disabled_entities=%d disabled_devices=%d "
             "missing_area=%d missing_name=%d",
             len(entries), counts["enabled_entries"], counts["disabled_entries"],
-            counts["registry_lights"], len(lights), counts["disabled_entities"],
+            counts["registry_lights"], counts["eligible_lights"],
+            counts["registry_covers"], counts["eligible_covers"], counts["disabled_entities"],
             counts["disabled_devices"], counts["missing_area"], counts["missing_name"],
         )
-        matches = find_duplicate_lutron_lights(self._devices, lights)
-        LOGGER.debug("Savant import suggested %d possible Lutron duplicate light(s)", len(matches))
+        matches = find_duplicate_lutron_devices(self._devices, entities)
+        LOGGER.debug("Savant import suggested %d possible Lutron duplicate device(s)", len(matches))
         return matches
 
     def _coolmaster_entries(self) -> list[ConfigEntry]:

@@ -186,17 +186,59 @@ def test_lutron_scan_logs_exclusion_counts_without_names(flow_module, flow, capl
     assert flow._find_lutron_duplicates() == {}
     assert f"{reason}=1" in caplog.text
     assert "registry_lights=1 eligible_lights=0" in caplog.text
-    assert "Kitchen" not in caplog.text
+    summaries = "\n".join(record.message for record in caplog.records if "registry scan" in record.message)
+    assert "Kitchen" not in summaries
     assert "light.kitchen_ceiling" not in caplog.text
 
 
-def test_registry_names_are_not_logged(flow_module, flow, caplog):
+def test_registry_names_are_logged_only_at_debug(flow_module, flow, caplog):
+    caplog.set_level("INFO", logger="custom_components.savant_ha")
+    flow._find_lutron_duplicates()
+    assert "registry candidate" not in caplog.text
     caplog.set_level("DEBUG", logger="custom_components.savant_ha")
     assert flow._find_lutron_duplicates() == {"savant-1": "light.kitchen_ceiling"}
     assert "registry_lights=1 eligible_lights=1" in caplog.text
-    assert "Kitchen" not in caplog.text
-    assert "Ceiling" not in caplog.text
+    assert "registry candidate domain=light names=['Kitchen Ceiling', 'Kitchen Ceiling'] area='Kitchen'" in caplog.text
     assert "light.kitchen_ceiling" not in caplog.text
+
+
+@pytest.fixture
+def cover_flow(flow_module, flow):
+    flow._devices[0]["type"] = "cover"
+    flow_module.er.async_entries_for_config_entry.return_value[0].entity_id = "cover.kitchen_ceiling"
+    return flow
+
+
+def test_registry_collects_cover_candidates(flow_module, cover_flow, caplog):
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    assert cover_flow._find_lutron_duplicates() == {"savant-1": "cover.kitchen_ceiling"}
+    assert "registry_covers=1 eligible_covers=1" in caplog.text
+    assert "registry candidate domain=cover" in caplog.text
+
+
+def test_cover_picker_is_unchecked_but_allows_override(cover_flow):
+    cover_flow._lutron_duplicates = cover_flow._find_lutron_duplicates()
+    result = asyncio.run(cover_flow.async_step_devices())
+    assert result["data_schema"]({}) == {"devices": []}
+    selector = next(iter(result["data_schema"].schema.values()))
+    assert "Possible Lutron duplicate: cover.kitchen_ceiling" in selector.config["options"][0]["label"]
+    result = asyncio.run(cover_flow.async_step_devices({"devices": ["savant-1"]}))
+    assert result["data"]["devices"] == cover_flow._devices
+
+
+def test_reconfigure_preserves_previously_imported_cover(flow_module, cover_flow, monkeypatch):
+    entry = SimpleNamespace(data={"devices": list(cover_flow._devices)})
+    cover_flow._get_reconfigure_entry = lambda: entry
+    cover_flow._discover_configured_entry = AsyncMock(return_value=SimpleNamespace(
+        host="example.invalid", port=12345, home_id="",
+    ))
+    monkeypatch.setattr(flow_module, "_devices_from_info", lambda probe: cover_flow._devices)
+    monkeypatch.setattr(flow_module, "probe_host", AsyncMock(return_value=SimpleNamespace(
+        authorized=True, devices=[object()],
+    )))
+    result = asyncio.run(cover_flow.async_step_reconfigure({"username": "test", "password": "test"}))
+    assert result["data_schema"]({}) == {"devices": ["savant-1"]}
+    cover_flow.hass.config_entries.async_update_entry.assert_not_called()
 
 
 def test_new_import_suggests_unchecked_duplicate_and_allows_override(flow_module, flow, monkeypatch):

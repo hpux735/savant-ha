@@ -2,7 +2,7 @@
 
 import pytest
 
-from custom_components.savant_ha.lutron import find_duplicate_lutron_lights
+from custom_components.savant_ha.lutron import find_duplicate_lutron_devices
 
 
 def _device(id="savant-1", name="Ceiling", area="Kitchen", type="light"):
@@ -17,7 +17,7 @@ def _light(entity_id="light.kitchen_ceiling", name="Kitchen Ceiling", area="Kitc
 def test_exact_area_and_name_suggest_duplicate(name):
     device = _device(name=name)
     light = _light()
-    assert find_duplicate_lutron_lights([device], [light]) == {
+    assert find_duplicate_lutron_devices([device], [light]) == {
         "savant-1": "light.kitchen_ceiling"
     }
     assert device["name"] == name
@@ -34,33 +34,33 @@ def test_exact_area_and_name_suggest_duplicate(name):
     _device(type="climate"),
 ])
 def test_nonmatching_or_nonlight_device_is_not_suggested(device):
-    assert find_duplicate_lutron_lights([device], [_light()]) == {}
+    assert find_duplicate_lutron_devices([device], [_light()]) == {}
 
 
 def test_empty_lutron_inventory_keeps_everything():
-    assert find_duplicate_lutron_lights([_device()], []) == {}
+    assert find_duplicate_lutron_devices([_device()], []) == {}
 
 
 def test_same_name_in_another_area_does_not_create_ambiguity():
-    assert find_duplicate_lutron_lights(
+    assert find_duplicate_lutron_devices(
         [_device(), _device(id="savant-2", area="Bedroom")], [_light()]
     ) == {"savant-1": "light.kitchen_ceiling"}
 
 
 def test_multiple_lutron_entities_or_bridges_are_ambiguous():
-    assert find_duplicate_lutron_lights(
+    assert find_duplicate_lutron_devices(
         [_device()], [_light(), _light(entity_id="light.second_bridge_ceiling")]
     ) == {}
 
 
 def test_multiple_savant_lights_matching_one_lutron_entity_are_ambiguous():
-    assert find_duplicate_lutron_lights(
+    assert find_duplicate_lutron_devices(
         [_device(), _device(id="savant-2", name="Kitchen Ceiling")], [_light()]
     ) == {}
 
 
 def test_ambiguous_savant_candidate_also_blocks_a_shared_lutron_match():
-    assert find_duplicate_lutron_lights(
+    assert find_duplicate_lutron_devices(
         [_device(), _device(id="savant-2", name="Second")],
         [{"entity_id": "light.shared", "area": "Kitchen", "names": ["Ceiling", "Second"]},
          _light(entity_id="light.second", name="Second")],
@@ -68,7 +68,7 @@ def test_ambiguous_savant_candidate_also_blocks_a_shared_lutron_match():
 
 
 def test_area_prefix_requires_a_whole_word_boundary():
-    assert find_duplicate_lutron_lights(
+    assert find_duplicate_lutron_devices(
         [_device(name="ette Ceiling")], [_light(name="Kitchenette Ceiling")]
     ) == {}
 
@@ -83,8 +83,47 @@ def test_area_prefix_requires_a_whole_word_boundary():
 ])
 def test_matching_summary_reports_reasons_without_identifiers(caplog, device, lights, reason):
     caplog.set_level("DEBUG", logger="custom_components.savant_ha")
-    find_duplicate_lutron_lights([device], lights)
-    assert "Savant Lutron matching summary savant_lights=1" in caplog.text
-    assert reason in caplog.text
+    find_duplicate_lutron_devices([device], lights)
+    summaries = "\n".join(record.message for record in caplog.records if "matching summary domain=light" in record.message)
+    assert "Savant Lutron matching summary domain=light savant_lights=1" in summaries
+    assert reason in summaries
     for private in ("Kitchen", "Bedroom", "Ceiling", "Accent", "light.kitchen_ceiling", "savant-1"):
-        assert private not in caplog.text
+        assert private not in summaries
+
+
+def test_light_and_cover_with_identical_names_match_only_their_own_domain():
+    devices = [_device(), _device(id="shade-1", type="cover")]
+    entities = [_light(), _light(entity_id="cover.kitchen_ceiling")]
+    assert find_duplicate_lutron_devices(devices, entities) == {
+        "savant-1": "light.kitchen_ceiling", "shade-1": "cover.kitchen_ceiling",
+    }
+
+
+def test_cover_does_not_match_a_light_with_the_same_name():
+    assert find_duplicate_lutron_devices([_device(type="cover")], [_light()]) == {}
+
+
+@pytest.mark.parametrize("area, name", [("Kitchen", "Kitchen Ceiling"), (" kitchen ", " ceiling ")])
+def test_cover_name_and_area_normalization(area, name):
+    assert find_duplicate_lutron_devices(
+        [_device(id="shade-1", type="cover", area=area, name=name)],
+        [_light(entity_id="cover.kitchen_ceiling")],
+    ) == {"shade-1": "cover.kitchen_ceiling"}
+
+
+def test_ambiguous_covers_are_not_suggested():
+    assert find_duplicate_lutron_devices(
+        [_device(type="cover")],
+        [_light(entity_id="cover.first"), _light(entity_id="cover.second")],
+    ) == {}
+
+
+def test_import_candidate_logs_names_and_areas_only_at_debug(caplog):
+    device = {**_device(), "control": {"password": "secret-value"}, "addresses": "secret-address"}
+    caplog.set_level("INFO", logger="custom_components.savant_ha")
+    find_duplicate_lutron_devices([device], [_light()])
+    assert "import candidate" not in caplog.text
+    caplog.set_level("DEBUG", logger="custom_components.savant_ha")
+    find_duplicate_lutron_devices([device], [_light()])
+    assert "import candidate domain=light name='Ceiling' area='Kitchen'" in caplog.text
+    assert "secret-" not in caplog.text

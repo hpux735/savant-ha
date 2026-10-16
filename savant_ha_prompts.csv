@@ -1165,3 +1165,77 @@ homeassistant.data_entry_flow.UnknownStep: Handler SavantConfigFlow doesn't supp
 2026-10-16 12:03:30.012 INFO (MainThread) [custom_components.savant_ha] Savant probe: authorized=True auth_response=True rooms=1 hvac=0 zones=0 devices=494
 2026-10-16 12:03:30.092 DEBUG (MainThread) [custom_components.savant_ha] Savant import suggested 0 possible Lutron duplicate light(s)"
 1792177984317,2026-10-16T19:13:04.317Z,,,commit and push
+1792178307215,2026-10-16T19:18:27.215Z,,Investigate scene context after separate registrations fail,"2026-10-16 12:16:50.406 INFO (MainThread) [custom_components.savant_ha] Savant host connected
+2026-10-16 12:16:50.406 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/devicePresent (1 message(s))
+2026-10-16 12:16:50.567 DEBUG (MainThread) [custom_components.savant_ha] Savant <- session/deviceRecognized (1 message(s))
+2026-10-16 12:16:50.568 INFO (MainThread) [custom_components.savant_ha] Savant deviceRecognized (authentication=True)
+2026-10-16 12:16:50.667 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/authenticationRequest (1 message(s))
+2026-10-16 12:16:50.675 DEBUG (MainThread) [custom_components.savant_ha] Savant <- session/authenticationResponse (1 message(s))
+2026-10-16 12:16:50.675 INFO (MainThread) [custom_components.savant_ha] Savant login successful
+2026-10-16 12:16:50.675 INFO (MainThread) [custom_components.savant_ha] Savant discovered 1 new room(s)
+2026-10-16 12:16:50.679 DEBUG (MainThread) [custom_components.savant_ha] Savant <- featureLock (1 message(s))
+2026-10-16 12:16:50.679 DEBUG (MainThread) [custom_components.savant_ha] Savant featureLock: [{'TrueImageUnlock': {'state': 'unconfigured', 'capacityAvailable': 0, 'controllersUnlocked': 0}}]
+2026-10-16 12:16:50.680 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (21 message(s))
+2026-10-16 12:16:51.119 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (0 message(s))
+2026-10-16 12:16:51.119 DEBUG (MainThread) [custom_components.savant_ha] Savant -> session/fileDownload (1 message(s))
+2026-10-16 12:16:51.211 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/dashboard/register (1 message(s))
+2026-10-16 12:16:51.213 DEBUG (MainThread) [custom_components.savant_ha] Savant scene subscription sent state=RecentServices
+2026-10-16 12:16:51.213 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/dashboard/register (1 message(s))
+2026-10-16 12:16:51.216 DEBUG (MainThread) [custom_components.savant_ha] Savant scene subscription sent state=scenesAndFoldersReduced
+2026-10-16 12:16:51.216 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (1 message(s))
+2026-10-16 12:16:51.218 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 12:16:51.220 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 12:16:51.222 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 12:16:51.231 DEBUG (MainThread) [custom_components.savant_ha] Savant -> state/register (2896 message(s))
+2026-10-16 12:16:51.238 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dcm/request (1 message(s))
+2026-10-16 12:16:51.240 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 12:16:51.241 DEBUG (MainThread) [custom_components.savant_ha] Savant -> dis/userData/register (1 message(s))
+2026-10-16 12:16:51.246 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/dashboard/update (1 message(s))
+2026-10-16 12:16:51.246 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard scene candidate index=0 message_type=dict fields=[('state', 'str'), ('value', 'list')] state_present=True state=RecentServices value_type=list value_count=1
+2026-10-16 12:16:51.247 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard update has no scene inventory
+2026-10-16 12:16:51.248 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:51.249 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:51.253 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:51.253 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:51.259 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 12:16:51.261 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s)) 2026-10-16 12:16:52.511 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 12:16:52.513 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:52.514 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:52.516 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:52.517 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:52.521 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (764 message(s))
+2026-10-16 12:16:52.524 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.Audio Zone 1.refreshLMQ value='{""from"":""getRoot*"",""to"":""getRoot"",""time"":1792087460265916000}'
+2026-10-16 12:16:52.525 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.Audio Zone 1.refreshLMQ reason=no_local_waiter active_searches=0
+2026-10-16 12:16:52.526 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.Audio Zone 5.refreshLMQ value='{""from"":""getRoot*"",""to"":""getRoot"",""time"":1791155769937868000}'
+2026-10-16 12:16:52.526 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.Audio Zone 5.refreshLMQ reason=no_local_waiter active_searches=0
+2026-10-16 12:16:52.527 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.Audio Zone 1.refreshLMQ3 value='[{""from"":""getRoot"",""to"":""getRoot"",""time"":8},{""from"":""getRoot"",""to"":""getRoot"",""time"":0}]'
+2026-10-16 12:16:52.528 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.Audio Zone 1.refreshLMQ3 reason=no_local_waiter active_searches=0
+2026-10-16 12:16:52.528 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.AVB Stream 5.refreshLMQ value='{""from"":""getRoot*"",""to"":""getRoot"",""time"":1792087467395994000}'
+2026-10-16 12:16:52.529 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.AVB Stream 5.refreshLMQ reason=no_local_waiter active_searches=0
+2026-10-16 12:16:52.534 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.Audio Zone 5.refreshLMQ3 value='[{""from"":""getRoot"",""to"":""getRoot"",""time"":4}]'
+2026-10-16 12:16:52.534 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.Audio Zone 5.refreshLMQ3 reason=no_local_waiter active_searches=0
+2026-10-16 12:16:52.537 DEBUG (MainThread) [custom_components.savant_ha] Savant <- music search refresh state=<PROJECT_NAME>.AVB Stream 5.refreshLMQ3 value='[{""from"":""getRoot"",""to"":""getRoot"",""time"":8},{""from"":""getRoot"",""to"":""getRoot"",""time"":0}]'
+2026-10-16 12:16:52.537 DEBUG (MainThread) [custom_components.savant_ha] Savant music search refresh ignored state=<PROJECT_NAME>.AVB Stream 5.refreshLMQ3 reason=no_local_waiter active_searches=0
+2026-10-16 12:16:53.049 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:53.049 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:53.051 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:53.051 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:53.054 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/dashboard/update (1 message(s))
+2026-10-16 12:16:53.055 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard scene candidate index=0 message_type=dict fields=[('state', 'str'), ('value', 'list')] state_present=True state=RecentServices value_type=list value_count=1
+2026-10-16 12:16:53.055 DEBUG (MainThread) [custom_components.savant_ha] Savant dashboard update has no scene inventory
+2026-10-16 12:16:53.059 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:53.059 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:16:53.062 DEBUG (MainThread) [custom_components.savant_ha] Savant <- dis/userData/update (1 message(s))
+2026-10-16 12:16:53.062 DEBUG (MainThread) [custom_components.savant_ha] Unhandled Savant URI 'dis/userData/update'
+2026-10-16 12:17:19.910 DEBUG (MainThread) [custom_components.savant_ha] Savant <- state/update (1 message(s))
+2026-10-16 12:17:34.984 DEBUG (MainThread) [custom_components.savant_ha] Savant discovery: 2 control reply(ies) 
+
+We're still not seeing scenes, unforch"
+1792178768565,2026-10-16T19:26:08.565Z,,Pause scenes and focus on Lutron deduplication,"Ok, let's hold off on the scenes until we can get better docs.  Let's focus on the lutron lights de-duplication"
+1792178895091,2026-10-16T19:28:15.091Z,,Clarify reconfigure action,"do you mean reconfigure rather than refresh?"
+1792179099024,2026-10-16T19:31:39.024Z,,Diagnose Lutron area and name mismatches,"2026-10-16 12:29:32.083 DEBUG (MainThread) [custom_components.savant_ha] Savant Lutron registry scan entries=1 enabled_entries=1 disabled_entries=0 registry_lights=214 eligible_lights=214 disabled_entities=0 disabled_devices=0 missing_area=0 missing_name=0
+2026-10-16 12:29:32.149 DEBUG (MainThread) [custom_components.savant_ha] Savant Lutron matching summary savant_lights=201 lutron_lights=214 missing_area=0 missing_name=0 no_matching_area=55 no_matching_name=146 ambiguous=0 suggested=0
+2026-10-16 12:29:32.150 DEBUG (MainThread) [custom_components.savant_ha] Savant import suggested 0 possible Lutron duplicate light(s)"
+1792179123745,2026-10-16T19:32:03.745Z,,Extend Lutron deduplication to covers,"we should also de-dupe shades (covers)"
+1792179173352,2026-10-16T19:32:53.352Z,,Print duplicate candidate names and areas at debug,"I think it's best if you print them to debug for now"
+1792179752077,2026-10-16T19:42:32.077Z,,,commit and push
