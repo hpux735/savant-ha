@@ -1,14 +1,15 @@
 {
   "domain": "savant_ha",
   "name": "Savant",
-  "zeroconf": ["_soapi_sdo._tcp.local."],
-  "codeowners": ["@wdillon"],
+  "categories": ["hubs_protocols.smart_home_hubs"],
+  "codeowners": ["@hpux735"],
   "config_flow": true,
   "dependencies": ["zeroconf"],
-  "documentation": "https://git.housedillon.com/wdillon/savant-ha2",
+  "documentation": "https://github.com/hpux735/savant-ha",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "issue_tracker": "https://git.housedillon.com/wdillon/savant-ha2/issues",
+  "issue_tracker": "https://github.com/hpux735/savant-ha/issues",
   "requirements": ["msgpack>=1.0.0"],
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "zeroconf": ["_soapi_sdo._tcp.local."]
 }
