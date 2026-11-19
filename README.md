@@ -25,18 +25,29 @@ UDP 9101/9103 discovery). The integration:
 
 ## Installation
 
-### HACS (recommended)
+[Open this repository in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=hpux735&repository=savant-ha&category=integration)
+(works with the Marketplace and with HACS).
+
+### Marketplace (Home Assistant 2026.11 and later)
+
+1. Settings → **Marketplace** → **Add from link**
+2. Add `https://github.com/hpux735/savant-ha` (category **Integration**)
+3. Select **Install**. Setup starts when the install finishes.
+
+### HACS (Home Assistant 2026.10 and earlier)
 
 1. HACS → **Integrations** → ⋮ → **Custom repositories**
-2. Add `https://git.housedillon.com/wdillon/savant-ha2` (category **Integration**)
+2. Add `https://github.com/hpux735/savant-ha` (category **Integration**)
 3. **Download**, then restart Home Assistant.
 
 ### Manual
 
 ```bash
-cd /path/to/ha/config/custom_components
-git clone https://git.housedillon.com/wdillon/savant-ha2.git savant_ha
+git clone https://github.com/hpux735/savant-ha.git /tmp/savant-ha
+cp -r /tmp/savant-ha/custom_components/savant_ha /path/to/ha/config/custom_components/
 ```
+
+Then restart Home Assistant.
 
 ## Configuration
 

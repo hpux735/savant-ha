@@ -27,6 +27,8 @@ PLATFORMS: list[Platform] = [
     Platform.MEDIA_PLAYER,
     Platform.SCENE,
 ]
+# YAML setup is not supported; configuration is via the UI only.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 SERVICE_SET_MEDIA_SERVER_ZONES = "set_media_server_zones"
 ATTR_ZONE_ENTITY_IDS = "zone_entity_ids"
 SET_MEDIA_SERVER_ZONES_SCHEMA = vol.Schema(
@@ -42,7 +44,6 @@ def _get_hub(hass: HomeAssistant, entry: ConfigEntry) -> SavantHub:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    # YAML setup is not supported; configuration is via the UI only.
     async def _async_set_media_server_zones(
         call: ServiceCall,
     ) -> dict[str, object] | None:
